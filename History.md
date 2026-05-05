@@ -1,25 +1,27 @@
-# Development History - IJToolsUsingOnnxruntime
+# 開発履歴 - IJToolsUsingOnnxruntime
 
 ## [0.1.0] - 2026-05-05
 
-### Added
-- Initial implementation of ONNX Runtime plugins for ImageJ.
-- **ORT_1st_ReadAndRelease**: Model management and slot-based loading.
-- **ORT_2nd_Detection**: YOLO object detection (supports Standard and E2E models).
-- **ORT_2nd_Pose**: YOLO pose estimation (supports Standard and E2E models).
-- **ORT_2nd_Classify**: YOLO image classification.
-- **ORT_Inspect**: Utility to inspect ONNX model metadata within ImageJ.
-- **OrtUtil**: Core utility class for image preprocessing, NMS, and UI helpers.
-- **MyOrtSession**: Wrapper for OrtSession with YOLO-specific logic.
+### 新規追加
+- ONNX Runtime を使用した ImageJ プラグイン群の初期実装。
+- **ORT_1st_ReadAndRelease**: スロットベースのモデル管理（読み込み・解放）。
+- **ORT_2nd_Detection**: YOLO 物体検出（通常モデル・E2E モデル対応）。
+- **ORT_2nd_Pose**: YOLO ポーズ推定（通常モデル・E2E モデル対応）。
+- **ORT_2nd_Classify**: YOLO 画像分類。
+- **ORT_Inspect**: ImageJ 上で ONNX モデルのメタデータを確認するユーティリティ。
+- **OrtUtil**: 前処理・NMS・UI ヘルパーを担う共通ユーティリティクラス。
+- **MyOrtSession**: YOLO 固有のロジックを内包した OrtSession ラッパー。
 
-### Changed
-- Refactored all plugin dialogs to use the `DialogListener` pattern for improved macro compatibility and interactive UI behavior.
-- Standardized image preprocessing with statistical debug logging.
+### 変更・改善
+- 全プラグインのダイアログを `DialogListener` パターンにリファクタリング。  
+  マクロ互換性とインタラクティブな UI 動作（フィールドの有効・無効切替）が大幅に向上。
+- 画像前処理に統計的デバッグログ（入力範囲・平均値）を追加し、推論入力の検証を容易に。
 
-### Tools & Testing
-- Added `test/` directory with comprehensive macros for automated inference testing.
-- Added `yolo/` directory with Python scripts for model inspection and label extraction.
-- Added `README_CLI_Testing.md` for headless environment configuration.
+### テスト・開発環境
+- `test/` フォルダに全モデルを対象とした自動推論テストマクロを追加。
+- `yolo/` フォルダにモデル検査・ラベル抽出用 Python スクリプトを追加。
+- CLI ヘッドレス実行の設定方法を `test/README_CLI_Testing.md` にまとめた。
+- `copy_to_plugins.bat` の `pause` を除去し、自動ビルド・テストのフローを改善。
 
 ---
-*Note: This project follows a pure Java/ImageJ architecture for ONNX inference, independent of OpenCV.*
+*注: 本プロジェクトは OpenCV に依存しない、純 Java + ImageJ 構成で ONNX 推論を実現しています。*

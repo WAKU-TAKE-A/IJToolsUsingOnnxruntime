@@ -1,50 +1,50 @@
 # IJToolsUsingOnnxruntime
 
-ONNX Runtime based plugins for ImageJ, specifically optimized for YOLO-based computer vision tasks.
+ONNX Runtime を推論エンジンとして使用する ImageJ プラグイン群です。  
+YOLO ベースの物体検出・ポーズ推定・画像分類に対応しています。
 
-## Features
+## 特徴
 
-- **High-Performance Inference**: Powered by Microsoft ONNX Runtime for Java.
-- **YOLO Support**: 
-  - Object Detection (Standard & End-to-End)
-  - Pose Estimation (Standard & End-to-End)
-  - Image Classification
-- **Interactive UI**: Standard ImageJ GenericDialogs with real-time parameter validation using `DialogListener`.
-- **Macro Compatibility**: Full support for ImageJ macro recording and headless execution.
-- **Model Inspection**: Built-in tools to inspect ONNX model metadata and structure.
-- **Label Extraction**: Utility script to extract class names directly from model metadata.
+- **高速推論**: Microsoft ONNX Runtime for Java を採用。
+- **YOLO 対応**:
+  - 物体検出（通常モデル・E2E モデル）
+  - ポーズ推定（通常モデル・E2E モデル）
+  - 画像分類
+- **標準 UI**: ImageJ の `GenericDialog` と `DialogListener` を使用したインタラクティブなダイアログ。
+- **マクロ互換**: ImageJ マクロレコーダーおよびヘッドレス実行に完全対応。
+- **モデル検査**: ONNX モデルのメタデータ・入出力構造を確認するユーティリティを内蔵。
 
-## Installation
+## インストール
 
-1. Build the project using Maven:
+1. Maven でビルドします：
    ```powershell
    mvn clean package -DskipTests
    ```
-2. Copy the resulting `target/IJTools_UsingOnnxruntime.jar` to your ImageJ `plugins` folder.
-3. Restart ImageJ.
+2. 生成された `target/IJTools_UsingOnnxruntime.jar` を ImageJ の `plugins` フォルダにコピーします。
+3. ImageJ を再起動します。
 
-## Usage
+## 使い方
 
-### 1. Model Loading
-Go to `Plugins > ORT > 1st Read and Release`. Select your `.onnx` model and specify the format (e.g., `YOLO_Object_Pixel` or `YOLO_Pose`).
+### 1. モデルの読み込み
+`Plugins > ORT > 1st Read and Release` を開き、`.onnx` ファイルと形式（例：`YOLO_Object_Pixel`、`YOLO_Pose`）を指定します。
 
-### 2. Inference
-Open an image and go to:
-- `Plugins > ORT > 2nd Detection` for object detection.
-- `Plugins > ORT > 2nd Pose` for pose estimation.
-- `Plugins > ORT > 2nd Classify` for image classification.
+### 2. 推論の実行
+画像を開いてから、以下のメニューを選択します：
+- `Plugins > ORT > 2nd Detection` — 物体検出
+- `Plugins > ORT > 2nd Pose` — ポーズ推定
+- `Plugins > ORT > 2nd Classify` — 画像分類
 
-### 3. Inspection
-Use `Plugins > ORT > Inspect` to view the input/output nodes and metadata of an ONNX file.
+### 3. モデルの検査
+`Plugins > ORT > Inspect` で、ONNX ファイルの入出力ノードやメタデータを確認できます。
 
-## Developer Tools
+## 開発者向け
 
-Check the `test/` and `yolo/` folders for utility scripts:
-- `test/test_all_models.ijm`: Comprehensive macro test suite.
-- `yolo/inspect_onnx.py`: CLI model inspector.
-- `yolo/extract_names.py`: CLI label extractor.
+`test/` および `yolo/` フォルダにユーティリティが含まれています：
+- `test/test_all_models.ijm` — 全モデルを対象とした自動テストマクロ
+- `yolo/inspect_onnx.py` — CLI でモデル構造を検査するスクリプト
+- `yolo/extract_names.py` — モデルのメタデータからクラス名を抽出するスクリプト
 
-See `test/README_CLI_Testing.md` for detailed CLI testing instructions.
+CLI でのテスト方法の詳細は `test/README_CLI_Testing.md` を参照してください。
 
-## License
+## ライセンス
 MIT License
