@@ -22,7 +22,7 @@ OpenCV への依存を完全に排除し、依存関係を最小化する。
 | ライブラリ | バージョン | 用途 |
 |---|---|---|
 | `ij.jar` | 既存 | ImageJ 本体 |
-| `onnxruntime-1.25.0.jar` | 1.25.0 | ONNX 推論エンジン |
+| `onnxruntime.jar` | 1.25.1 | ONNX 推論エンジン |
 
 **OpenCV は一切使用しない。** 前処理・後処理はすべて純 Java + ImageJ API で実装する。
 
@@ -53,8 +53,9 @@ OpenCV への依存を完全に排除し、依存関係を最小化する。
 ```
 ORT_2nd_Heatmap.java             // 異常検知（EfficientAD 等）
 ORT_2nd_Segment.java             // セグメンテーション（SAM 等）
-ORT_2nd_Detection_E2E.java       // E2E 物体検出（YOLOv10 / RT-DETR 等）
 ```
+
+> **Note:** E2E 物体検出（`YOLO_Object_E2E`）および E2E ポーズ推定（`YOLO_Pose_E2E`）は v0.1.0 で `ORT_2nd_Detection` / `ORT_2nd_Pose` 内に統合済み。
 
 コード内では `ModelType` を enum で管理し、switch 文で分岐する設計とする。  
 新しいタスクは enum 値と対応クラスを追加するだけで拡張できるようにする。
@@ -69,8 +70,7 @@ ORT_2nd_Detection_E2E.java       // E2E 物体検出（YOLOv10 / RT-DETR 等）
 - コード内コメントは**英語**
 - 全 `ORT_2nd_*` に `enable_log`（boolean）チェックボックスを設ける
 - `enable_log = false` のとき `IJ.log()` の呼び出しを一切行わない（マクロ自動実行対応）
-- 全 `ORT_2nd_*` に `enable_refresh_data`（boolean）チェックボックスを設ける
-- `enable_refresh_data = true` のとき ResultsTable と RoiManager をリセットしてから追加する
+- ~~全 `ORT_2nd_*` に `enable_refresh_data`（boolean）チェックボックスを設ける~~ → v0.1.0 では未実装
 
 ### 3.2 スロット共通仕様
 
@@ -247,9 +247,10 @@ public enum ModelType {
 public enum CoordFormat {
     YOLO_PIXEL,
     YOLO_NORMALIZED,
+    YOLO_OBJECT_E2E,   // E2E 物体検出（YOLOv10 等）: NMS 不要
     YOLOX_UNDECODED,
     YOLO_POSE,
-    YOLO_POSE_E2E,
+    YOLO_POSE_E2E,     // E2E ポーズ推定: NMS 不要
 }
 ```
 
@@ -288,6 +289,14 @@ public long[] getOutputShape() throws OrtException
 ```
 
 `session.getOutputInfo()` から最初の出力テンソルの Shape を返す。
+
+#### `resolveClassName(int idx)`
+
+```java
+public String resolveClassName(int idx)
+```
+
+クラス名を解決して返す。`classNames` が null または範囲外の場合は `"class_N"` にフォールバック。
 
 #### ゲッター群
 
@@ -400,6 +409,7 @@ enable_log:   ☑                               // addCheckbox
 private static final String[] FORMAT_LABELS = {
     "YOLO_Object_Pixel",
     "YOLO_Object_Normalized",
+    "YOLO_Object_E2E",       // v0.1.0 追加
     "YOLO_Class",
     "YOLO_Pose",
     "YOLO_Pose_E2E",
@@ -496,7 +506,7 @@ slot:               [ 0 ▼ ]
 score_threshold:    0.25
 nms_threshold:      0.45
 show_results_table: ☑
-enable_refresh_data:☑
+show_roi_manager:   ☑
 enable_log:         ☑
 
 ──────────────────────────────
@@ -547,9 +557,8 @@ YOLO_Class
 [ダイアログタイトル] Classification Inference
 
 slot:               [ 0 ▼ ]
-top_n:              5
+top_k:              5
 show_results_table: ☑
-enable_refresh_data:☑
 enable_log:         ☑
 
 ──────────────────────────────
@@ -607,10 +616,7 @@ slot:               [ 0 ▼ ]
 score_threshold:    0.25
 nms_threshold:      0.45
 kpt_threshold:      0.50
-show_keypoints:     ☑
-show_skeleton:      ☑
-show_results_table: ☑
-enable_refresh_data:☑
+show_roi_manager:   ☑
 enable_log:         ☑
 
 ──────────────────────────────
@@ -740,3 +746,34 @@ hOrig = h / scale
 
 初期バージョン: `0.1.0`  
 バージョン定数は `OrtUtil.java` に `public static final String VERSION = "0.1.0";` として定義する。
+
+---
+
+## 15. CLI テスト環境
+
+### 15.1 基本コマンド
+
+プロジェクトディレクトリから `java -jar ij.jar` を実行した場合、ImageJ はカレントディレクトリを基準にプラグインを探してしまう。  
+**`-Dplugins.dir`** を明示的に指定することが必要。
+
+```powershell
+# ヘッドレス実行（バッチモード）
+java "-Dplugins.dir=C:\tools\ImageJ" -Xmx2g -jar "C:\tools\ImageJ\ij.jar" -batch "test/test_all_models.ijm"
+
+# GUI 起動してマクロ実行
+java "-Dplugins.dir=C:\tools\ImageJ" -Xmx2g -jar "C:\tools\ImageJ\ij.jar" -macro "test/test_all_models.ijm"
+```
+
+### 15.2 ビルドとコピーの手順
+
+```powershell
+mvn clean package -DskipTests
+.\copy_to_plugins.bat
+```
+
+### 15.3 注意点
+
+- `copy_to_plugins.bat` には `pause` を入れないこと（自動テストがブロックされる）
+- `-batch` モードでは `rt.show("Results")` 等のウィンドウ表示が GUI と異なる動作をするため、プラグイン側で `if (!IJ.isMacro()) rt.show("Results");` と制御する
+- `System.out.println()` による `DEBUG:` ログは `-batch` モードでもコンソールに出力される
+- 詳細は `test/README_CLI_Testing.md` を参照。
