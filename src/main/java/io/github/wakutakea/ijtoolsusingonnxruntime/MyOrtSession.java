@@ -109,6 +109,53 @@ public class MyOrtSession {
         this.loaded = true;
     }
 
+    /**
+     * Checks if the selected model format/type matches the actual output tensor and metadata.
+     * @return a warning message if a mismatch is found, otherwise null.
+     */
+    public String validateFormat() throws OrtException {
+        if (session == null) return null;
+        
+        Map<String, NodeInfo> outMap = session.getOutputInfo();
+        if (outMap.isEmpty()) return null;
+        NodeInfo ni = outMap.values().iterator().next();
+        if (!(ni.getInfo() instanceof TensorInfo)) return null;
+        long[] shape = ((TensorInfo) ni.getInfo()).getShape();
+
+        // 1. Check dimensionality
+        if (shape.length == 2) {
+            // [batch, classes] -> Classification
+            if (modelType != ModelType.CLASSIFICATION) {
+                return "Warning: Model output is 2D, but " + modelType + " was selected.\n"
+                     + "This model is likely a Classification model.";
+            }
+        } else if (shape.length == 3) {
+            // [batch, ...] -> Detection or Pose
+            if (modelType == ModelType.CLASSIFICATION) {
+                return "Warning: Model output is 3D, but Classification was selected.\n"
+                     + "This model is likely a Detection or Pose model.";
+            }
+        }
+
+        // 2. Check metadata 'task' (Ultralytics specific)
+        Map<String, String> custom = session.getMetadata().getCustomMetadata();
+        String task = custom.get("task");
+        if (task != null && !task.isEmpty()) {
+            task = task.toLowerCase();
+            if (task.contains("detect") && (modelType != ModelType.YOLO && modelType != ModelType.YOLOX)) {
+                return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
+            }
+            if (task.contains("pose") && modelType != ModelType.POSE) {
+                return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
+            }
+            if (task.contains("class") && modelType != ModelType.CLASSIFICATION) {
+                return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
+            }
+        }
+
+        return null;
+    }
+
     /** Detects input width/height from the session. Sets -1 if dynamic. */
     private void detectInputShape() throws OrtException {
         this.inputWidth  = -1;

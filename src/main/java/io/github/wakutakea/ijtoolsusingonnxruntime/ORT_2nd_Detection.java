@@ -69,9 +69,18 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
         showRoiManager   = gd.getNextBoolean();
         enableLog        = gd.getNextBoolean();
 
-        if (gd.invalidNumber()) return false;
-        if (scoreThreshold < 0 || scoreThreshold > 1) return false;
-        if (nmsThreshold < 0 || nmsThreshold > 1) return false;
+        if (gd.invalidNumber()) {
+            IJ.showStatus("Invalid number");
+            return false;
+        }
+        if (scoreThreshold < 0 || scoreThreshold > 1) {
+            IJ.showStatus("Score threshold must be 0-1");
+            return false;
+        }
+        if (nmsThreshold < 0 || nmsThreshold > 1) {
+            IJ.showStatus("NMS threshold must be 0-1");
+            return false;
+        }
 
         return true;
     }
@@ -83,7 +92,13 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
     public void run(ImageProcessor ip) {
         MyOrtSession s = OrtUtil.getSlot(slotChoice);
         if (s == null || !s.isLoaded()) {
-            IJ.error("No model loaded in slot " + slotChoice);
+            OrtUtil.logError(this.getClass().getSimpleName(), "No model loaded in slot " + slotChoice);
+            return;
+        }
+
+        // Verify if the model is suitable for Detection
+        if (s.getModelType() != MyOrtSession.ModelType.YOLO && s.getModelType() != MyOrtSession.ModelType.YOLOX) {
+            OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - The model in slot " + slotChoice + " is not a Detection model (" + s.getModelType() + ").");
             return;
         }
 
@@ -149,7 +164,7 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
 
         } catch (Throwable t) {
             t.printStackTrace();
-            IJ.error("Detection inference failed: " + t.toString());
+            OrtUtil.logError(this.getClass().getSimpleName(), "Detection inference failed " + t.toString());
         }
     }
 

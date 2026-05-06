@@ -39,7 +39,7 @@ public class ORT_Inspect implements ExtendedPlugInFilter, DialogListener {
         if (gd.wasCanceled()) return DONE;
 
         if (OrtUtil.isNullOrEmpty(modelPath) || !new File(modelPath).exists()) {
-            IJ.error("Model file not found: " + modelPath);
+            OrtUtil.logError(this.getClass().getSimpleName(), "Model file not found " + modelPath);
             return DONE;
         }
 
@@ -92,7 +92,7 @@ public class ORT_Inspect implements ExtendedPlugInFilter, DialogListener {
             IJ.log(sb.toString());
 
         } catch (Exception e) {
-            IJ.error("Inspection failed: " + e.getMessage());
+            OrtUtil.logError(this.getClass().getSimpleName(), "Inspection failed " + e.getMessage());
         }
     }
 

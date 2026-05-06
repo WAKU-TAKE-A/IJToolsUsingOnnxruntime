@@ -294,4 +294,12 @@ public class OrtUtil {
     public static boolean isNullOrEmpty(String s) {
         return s == null || s.isEmpty() || s.isBlank();
     }
+
+    /**
+     * Logs an error message to the ImageJ Log window.
+     * Format: ClassName error: Message
+     */
+    public static void logError(String className, String msg) {
+        ij.IJ.log(className + " error: " + msg);
+    }
 }
