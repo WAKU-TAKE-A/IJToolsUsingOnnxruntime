@@ -57,8 +57,14 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
         topK       = (int) gd.getNextNumber();
         enableLog  = gd.getNextBoolean();
 
-        if (gd.invalidNumber()) return false;
-        if (topK < 1) return false;
+        if (gd.invalidNumber()) {
+            IJ.showStatus("Invalid number");
+            return false;
+        }
+        if (topK < 1) {
+            IJ.showStatus("Top-K must be at least 1");
+            return false;
+        }
 
         return true;
     }
@@ -70,7 +76,13 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
     public void run(ImageProcessor ip) {
         MyOrtSession s = OrtUtil.getSlot(slotChoice);
         if (s == null || !s.isLoaded()) {
-            IJ.error("No model loaded in slot " + slotChoice);
+            OrtUtil.logError(this.getClass().getSimpleName(), "No model loaded in slot " + slotChoice);
+            return;
+        }
+
+        // Verify if the model is suitable for Classification
+        if (s.getModelType() != MyOrtSession.ModelType.CLASSIFICATION) {
+            OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - The model in slot " + slotChoice + " is not a Classification model (" + s.getModelType() + ").");
             return;
         }
 
@@ -118,7 +130,7 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
 
         } catch (Throwable t) {
             t.printStackTrace();
-            IJ.error("Classification failed: " + t.toString());
+            OrtUtil.logError(this.getClass().getSimpleName(), "Classification failed " + t.toString());
         }
     }
 

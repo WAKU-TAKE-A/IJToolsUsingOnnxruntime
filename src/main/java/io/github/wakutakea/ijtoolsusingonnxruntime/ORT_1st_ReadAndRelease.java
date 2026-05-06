@@ -84,13 +84,13 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
         // Final validation before run()
         if (actionChoice == 0) { // read_model
             if (OrtUtil.isNullOrEmpty(modelPath) || !new File(modelPath).exists()) {
-                IJ.error("Model file not found: " + modelPath);
+                OrtUtil.logError(this.getClass().getSimpleName(), "Model file not found " + modelPath);
                 return DONE;
             }
         } else if (actionChoice == 1) { // release_model
             MyOrtSession s = OrtUtil.getSlot(slotChoice);
             if (s == null || !s.isLoaded()) {
-                IJ.error("Slot " + slotChoice + " is empty.");
+                OrtUtil.logError(this.getClass().getSimpleName(), "Slot " + slotChoice + " is empty.");
                 return DONE;
             }
         }
@@ -141,11 +141,6 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
         try {
             MyOrtSession existing = OrtUtil.getSlot(slotChoice);
             if (existing != null && existing.isLoaded()) {
-                if (!IJ.isMacro()) {
-                    if (!IJ.showMessageWithCancel("Warning",
-                            "Slot " + slotChoice + " already has \"" + existing.getModelName() + "\" loaded.\n" +
-                            "Overwrite?")) return;
-                }
                 existing.release();
             }
 
@@ -173,12 +168,20 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
                     s.setInputHeight((int) gd2.getNextNumber());
                 }
                 if (s.getInputWidth() <= 0 || s.getInputHeight() <= 0) {
-                    IJ.error("Input dimensions must be positive.");
+                    OrtUtil.logError(this.getClass().getSimpleName(), "Input dimensions must be positive.");
                     return;
                 }
             }
 
             s.loadClassNamesFromMetadata();
+
+            // Validate if the selected format matches the model's structure/metadata
+            String warning = s.validateFormat();
+            if (warning != null && !IJ.isMacro()) {
+                OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - " + warning);
+                return; // Stop loading if there's a mismatch
+            }
+
             OrtUtil.setSlot(slotChoice, s);
 
             if (enableLog) logModelLoaded(s);
@@ -186,7 +189,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
         } catch (Throwable t) {
             t.printStackTrace();
-            IJ.error("Failed to load model: " + t.toString());
+            OrtUtil.logError(this.getClass().getSimpleName(), "Failed to load model " + t.toString());
         }
     }
 
