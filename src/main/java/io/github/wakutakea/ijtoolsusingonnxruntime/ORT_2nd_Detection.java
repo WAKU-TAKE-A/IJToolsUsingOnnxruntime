@@ -252,13 +252,19 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
     private void parseYOLOX(float[][] data, int numClasses, int imgW, int imgH,
                             float scoreTh, float scale, float padLeft, float padTop,
                             int inputW, List<float[]> out) {
+        
+        int[] strides = {8, 16, 32};
+        int[][] gridStride = OrtUtil.makeGridStride(inputW, strides);
+        int[] grid   = gridStride[0];
+        int[] stride = gridStride[1];
+
         int numAnchors = data.length;
         for (int i = 0; i < numAnchors; i++) {
-            float x1 = data[i][0];
-            float y1 = data[i][1];
-            float x2 = data[i][2];
-            float y2 = data[i][3];
-            float objScore = data[i][4];
+            float tx  = data[i][0];
+            float ty  = data[i][1];
+            float tw  = data[i][2];
+            float th  = data[i][3];
+            float obj = data[i][4];
             
             float maxClsScore = -1;
             int   maxClass    = 0;
@@ -266,19 +272,34 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
                 float sc = data[i][5 + c];
                 if (sc > maxClsScore) { maxClsScore = sc; maxClass = c; }
             }
-            float totalScore = objScore * maxClsScore;
-            if (totalScore < scoreTh) continue;
 
-            float bw = x2 - x1;
-            float bh = y2 - y1;
-            float[] restored = OrtUtil.restoreBbox(x1, y1, bw, bh, scale, padLeft, padTop);
+            // Confidence calculation consistent with previous OCV implementation
+            float confidence = (float)(Math.sqrt(Math.max(0, obj)) * maxClsScore);
+            if (confidence < scoreTh) continue;
+
+            // Decode grid coordinates
+            int gx = grid[i * 2];
+            int gy = grid[i * 2 + 1];
+            int s  = stride[i];
+
+            double cx = (tx + gx) * s;
+            double cy = (ty + gy) * s;
+            double w  = Math.exp(tw) * s;
+            double h  = Math.exp(th) * s;
+
+            float bx = (float)(cx - w / 2);
+            float by = (float)(cy - h / 2);
+            float bw = (float)w;
+            float bh = (float)h;
+
+            float[] restored = OrtUtil.restoreBbox(bx, by, bw, bh, scale, padLeft, padTop);
             float rx = Math.max(0, Math.min(restored[0], imgW));
             float ry = Math.max(0, Math.min(restored[1], imgH));
             float rw = Math.max(0, Math.min(restored[2], imgW - rx));
             float rh = Math.max(0, Math.min(restored[3], imgH - ry));
             if (rw <= 0 || rh <= 0) continue;
 
-            out.add(new float[]{rx, ry, rw, rh, totalScore, maxClass});
+            out.add(new float[]{rx, ry, rw, rh, confidence, maxClass});
         }
     }
 
