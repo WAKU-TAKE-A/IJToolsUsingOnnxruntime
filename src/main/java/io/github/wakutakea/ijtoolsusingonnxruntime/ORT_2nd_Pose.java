@@ -24,6 +24,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
     private static double  nmsThreshold   = 0.45;
     private static double  kptThreshold   = 0.50;
     private static boolean showRoiManager   = true;
+    private static boolean enableRefreshData = true;
     private static boolean enableLog        = true;
 
     private ImagePlus imp;
@@ -37,9 +38,6 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
     @Override
     public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
         MyOrtSession s = OrtUtil.getSlot(slotChoice);
-        if (IJ.isMacro() && s != null && s.isLoaded()) {
-            return DOES_ALL;
-        }
 
         GenericDialog gd = new GenericDialog("2nd Pose");
         gd.addChoice("slot", OrtUtil.buildSlotLabels(), OrtUtil.buildSlotLabels()[slotChoice]);
@@ -47,6 +45,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
         gd.addNumericField("nms_threshold",   nmsThreshold,   2);
         gd.addNumericField("kpt_threshold",   kptThreshold,   2);
         gd.addCheckbox("show_roi_manager",   showRoiManager);
+        gd.addCheckbox("enable_refresh_data", enableRefreshData);
         gd.addCheckbox("enable_log",         enableLog);
         gd.addMessage(OrtUtil.getSlotStatusText());
         
@@ -54,6 +53,14 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
         gd.showDialog();
         
         if (gd.wasCanceled()) return DONE;
+
+        slotChoice       = gd.getNextChoiceIndex();
+        scoreThreshold   = gd.getNextNumber();
+        nmsThreshold     = gd.getNextNumber();
+        kptThreshold     = gd.getNextNumber();
+        showRoiManager   = gd.getNextBoolean();
+        enableRefreshData= gd.getNextBoolean();
+        enableLog        = gd.getNextBoolean();
         
         return DOES_ALL;
     }
@@ -66,6 +73,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
         nmsThreshold   = gd.getNextNumber();
         kptThreshold   = gd.getNextNumber();
         showRoiManager   = gd.getNextBoolean();
+        enableRefreshData= gd.getNextBoolean();
         enableLog        = gd.getNextBoolean();
 
         if (gd.invalidNumber()) {
@@ -112,7 +120,8 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
         String imageTitle = imp.getShortTitle();
 
         // 1. Preprocess
-        float[] inputData = OrtUtil.preprocess(ip, targetW, targetH);
+        boolean isYolox = (s.getModelType() == MyOrtSession.ModelType.YOLOX);
+        float[] inputData = OrtUtil.preprocess(ip, targetW, targetH, isYolox);
         float[] lbParams  = OrtUtil.calcLetterboxParams(imgW, imgH, targetW, targetH);
         float scale   = lbParams[0];
         float padLeft = lbParams[1];
@@ -248,7 +257,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
 
     private void outputResults(List<float[]> results, MyOrtSession s, String imageTitle) {
         if (showRoiManager) {
-            ij.plugin.frame.RoiManager rm = OrtUtil.getRoiManager(false, false);
+            ij.plugin.frame.RoiManager rm = OrtUtil.getRoiManager(enableRefreshData, false);
             for (float[] r : results) {
                 ij.gui.Roi roi = new ij.gui.Roi(r[0], r[1], r[2], r[3]);
                 roi.setName("person (" + String.format("%.2f", r[4]) + ")");

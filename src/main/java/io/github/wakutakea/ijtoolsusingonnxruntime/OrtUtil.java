@@ -106,7 +106,7 @@ public class OrtUtil {
      * @param targetH model input height
      * @return float array of length 3 * targetH * targetW in NCHW order (R, G, B planes)
      */
-    public static float[] preprocess(ImageProcessor ip, int targetW, int targetH) {
+    public static float[] preprocess(ImageProcessor ip, int targetW, int targetH, boolean isYolox) {
         // Ensure ColorProcessor
         ColorProcessor cp = (ip instanceof ColorProcessor)
                 ? (ColorProcessor) ip
@@ -136,22 +136,34 @@ public class OrtUtil {
         int[] pixels    = (int[]) padded.getPixels();
         int   planeSize = targetH * targetW;
         float[] nchw    = new float[3 * planeSize];
-        float sum = 0, max = -1.0f, min = 1.0f;
+        float sum = 0, max = -1.0f, min = Float.MAX_VALUE;
         for (int i = 0; i < planeSize; i++) {
             int px = pixels[i];
-            float r = ((px >> 16) & 0xFF) / 255.0f;
-            float g = ((px >>  8) & 0xFF) / 255.0f;
-            float b = ( px        & 0xFF) / 255.0f;
-            nchw[              i] = r;
-            nchw[planeSize   + i] = g;
-            nchw[planeSize*2 + i] = b;
+            float r = ((px >> 16) & 0xFF);
+            float g = ((px >>  8) & 0xFF);
+            float b = ( px        & 0xFF);
+
+            if (isYolox) {
+                // YOLOX: BGR order, [0, 255] range
+                nchw[              i] = b;
+                nchw[planeSize   + i] = g;
+                nchw[planeSize*2 + i] = r;
+            } else {
+                // YOLO: RGB order, [0.0, 1.0] range
+                r /= 255.0f;
+                g /= 255.0f;
+                b /= 255.0f;
+                nchw[              i] = r;
+                nchw[planeSize   + i] = g;
+                nchw[planeSize*2 + i] = b;
+            }
             
             float pixelSum = r + g + b;
             sum += pixelSum;
             max = Math.max(max, Math.max(r, Math.max(g, b)));
             min = Math.min(min, Math.min(r, Math.min(g, b)));
         }
-        System.out.println("DEBUG: Preprocess done. Shape: [1, 3, " + targetW + ", " + targetH + "]");
+        System.out.println("DEBUG: Preprocess done. Shape: [1, 3, " + targetW + ", " + targetH + "], isYolox: " + isYolox);
         System.out.println("DEBUG: Input Range: [" + min + ", " + max + "], Mean: " + (sum / (3 * planeSize)));
 
         return nchw;
@@ -258,6 +270,7 @@ public class OrtUtil {
         if (rt == null) {
             rt = new ResultsTable();
         }
+        ij.plugin.filter.Analyzer.setResultsTable(rt);
         if (reset) {
             rt.reset();
         }
@@ -265,10 +278,14 @@ public class OrtUtil {
     }
 
     public static RoiManager getRoiManager(boolean reset, boolean showNone) {
-        Frame frame = WindowManager.getFrame("ROI Manager");
-        RoiManager rm = (frame == null) ? new RoiManager() : (RoiManager) frame;
+        RoiManager rm = RoiManager.getInstance();
+        if (rm == null) {
+            rm = new RoiManager();
+        }
         rm.setVisible(true);
-        if (reset)    rm.reset();
+        if (reset) {
+            rm.reset();
+        }
         if (showNone) rm.runCommand("Show None");
         return rm;
     }

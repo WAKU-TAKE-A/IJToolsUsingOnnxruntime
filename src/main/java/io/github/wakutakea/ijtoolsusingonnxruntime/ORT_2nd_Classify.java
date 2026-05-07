@@ -19,6 +19,7 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
 
     private static int     slotChoice   = 0;
     private static int     topK         = 1;
+    private static boolean enableRefreshData = true;
     private static boolean enableLog    = true;
 
     private ImagePlus imp;
@@ -32,13 +33,11 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
     @Override
     public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
         MyOrtSession s = OrtUtil.getSlot(slotChoice);
-        if (IJ.isMacro() && s != null && s.isLoaded()) {
-            return DOES_ALL;
-        }
 
         GenericDialog gd = new GenericDialog("2nd Classify");
         gd.addChoice("slot", OrtUtil.buildSlotLabels(), OrtUtil.buildSlotLabels()[slotChoice]);
         gd.addNumericField("top_k", topK, 0);
+        gd.addCheckbox("enable_refresh_data", enableRefreshData);
         gd.addCheckbox("enable_log", enableLog);
         gd.addMessage(OrtUtil.getSlotStatusText());
 
@@ -46,6 +45,11 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
         gd.showDialog();
 
         if (gd.wasCanceled()) return DONE;
+
+        slotChoice        = gd.getNextChoiceIndex();
+        topK              = (int) gd.getNextNumber();
+        enableRefreshData = gd.getNextBoolean();
+        enableLog         = gd.getNextBoolean();
         
         return DOES_ALL;
     }
@@ -55,6 +59,7 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
     public boolean dialogItemChanged(GenericDialog gd, AWTEvent e) {
         slotChoice = gd.getNextChoiceIndex();
         topK       = (int) gd.getNextNumber();
+        enableRefreshData = gd.getNextBoolean();
         enableLog  = gd.getNextBoolean();
 
         if (gd.invalidNumber()) {
@@ -91,7 +96,8 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
         String imageTitle = imp.getShortTitle();
 
         // 1. Preprocess
-        float[] inputData = OrtUtil.preprocess(ip, targetW, targetH);
+        boolean isYolox = (s.getModelType() == MyOrtSession.ModelType.YOLOX);
+        float[] inputData = OrtUtil.preprocess(ip, targetW, targetH, isYolox);
 
         // 2. Inference
         long startTime = System.currentTimeMillis();
@@ -116,7 +122,7 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
             }
 
             // 5. Output to Results Table
-            ResultsTable rt = OrtUtil.getResultsTable(false);
+            ResultsTable rt = OrtUtil.getResultsTable(enableRefreshData);
             for (int i = 0; i < topIndices.length; i++) {
                 int idx = topIndices[i];
                 rt.incrementCounter();
@@ -126,7 +132,7 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
                 rt.addValue("Score", probs[idx]);
                 rt.addValue("Inference(ms)", inferenceTime);
             }
-            if (!IJ.isMacro()) rt.show("Results");
+            rt.show("Results");
 
         } catch (Throwable t) {
             t.printStackTrace();
