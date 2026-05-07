@@ -1,5 +1,16 @@
 # 開発履歴 - IJToolsUsingOnnxruntime
 
+## [0.9.2] - 2026-05-07
+
+### 追加
+- 全プラグイン（Detection, Pose, Classify）に `enable_refresh_data` チェックボックスを追加。結果テーブルや ROI マネージャーの「クリアして追記」か「単純追記」かを選択可能に。
+
+### 修正
+- YOLOX 向けの前処理を適正化。BGR 順かつ [0, 255] スケールでの入力をサポート。
+- YOLOX Undecoded 形式のデコード処理を修正。グリッドとストライドを用いた座標変換ロジックを実装。
+- Headless モードおよびマクロ実行時の引数解析不具合を修正。`showDialog` 内でのパラメータ取得を確実に行うよう改善。
+- `OrtUtil` の `ResultsTable` および `RoiManager` 取得ロジックを修正し、Headless/マクロ環境でのデータ共有を安定化。
+
 ## [0.9.1] - 2026-05-07
 
 ### 修正
