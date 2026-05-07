@@ -42,7 +42,7 @@ import java.util.List;
 
 public class OrtUtil {
 
-    public static final String VERSION   = "0.9.0";
+    public static final String VERSION   = "0.9.1";
     public static final int    MAX_SLOTS = 5;
 
     private static OrtEnvironment   env   = null;
@@ -293,6 +293,34 @@ public class OrtUtil {
 
     public static boolean isNullOrEmpty(String s) {
         return s == null || s.isEmpty() || s.isBlank();
+    }
+
+    /**
+     * Generates grid and stride arrays for YOLOX decoding.
+     * @return int[][] { gridArray(x,y,x,y...), strideArray(s,s...) }
+     */
+    public static int[][] makeGridStride(int imgSize, int[] strides) {
+        List<Integer> gridList   = new ArrayList<>();
+        List<Integer> strideList = new ArrayList<>();
+
+        for (int s : strides) {
+            int gridH = imgSize / s;
+            int gridW = imgSize / s;
+            for (int y = 0; y < gridH; y++) {
+                for (int x = 0; x < gridW; x++) {
+                    gridList.add(x);
+                    gridList.add(y);
+                    strideList.add(s);
+                }
+            }
+        }
+
+        int[] grid   = new int[gridList.size()];
+        int[] stride = new int[strideList.size()];
+        for (int i = 0; i < gridList.size();   i++) grid[i]   = gridList.get(i);
+        for (int i = 0; i < strideList.size(); i++) stride[i] = strideList.get(i);
+
+        return new int[][]{grid, stride};
     }
 
     /**
