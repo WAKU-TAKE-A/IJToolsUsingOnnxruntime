@@ -39,7 +39,7 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
         MyOrtSession s = OrtUtil.getSlot(slotChoice);
         
 
-        GenericDialog gd = new GenericDialog("2nd Detection");
+        GenericDialog gd = new GenericDialog("2nd Detection v" + OrtUtil.VERSION);
         gd.addChoice("slot", OrtUtil.buildSlotLabels(), OrtUtil.buildSlotLabels()[slotChoice]);
         gd.addNumericField("score_threshold", scoreThreshold, 2);
         gd.addNumericField("nms_threshold",   nmsThreshold,   2);

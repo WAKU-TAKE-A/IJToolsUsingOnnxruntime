@@ -28,7 +28,7 @@ public class ORT_Inspect implements ExtendedPlugInFilter, DialogListener {
 
     @Override
     public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
-        GenericDialog gd = new GenericDialog("Inspect ONNX Model");
+        GenericDialog gd = new GenericDialog("Inspect ONNX Model v" + OrtUtil.VERSION);
         gd.addFileField("model_path", modelPath, 40);
         gd.addCheckbox("show_metadata", showMetadata);
         gd.addMessage("Note: Paths with quotes will be automatically trimmed.");

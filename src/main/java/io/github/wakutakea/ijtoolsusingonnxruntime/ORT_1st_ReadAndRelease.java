@@ -66,7 +66,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
     @Override
     public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
-        GenericDialog gd = new GenericDialog("1st Read and Release");
+        GenericDialog gd = new GenericDialog("1st Read and Release v" + OrtUtil.VERSION);
 
         gd.addChoice("action",       ACTION_LABELS,           ACTION_LABELS[actionChoice]);
         gd.addFileField("model_path", modelPath, 40);
