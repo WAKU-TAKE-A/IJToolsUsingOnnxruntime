@@ -34,7 +34,7 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
     public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
         MyOrtSession s = OrtUtil.getSlot(slotChoice);
 
-        GenericDialog gd = new GenericDialog("2nd Classify");
+        GenericDialog gd = new GenericDialog("2nd Classify v" + OrtUtil.VERSION);
         gd.addChoice("slot", OrtUtil.buildSlotLabels(), OrtUtil.buildSlotLabels()[slotChoice]);
         gd.addNumericField("top_k", topK, 0);
         gd.addCheckbox("enable_refresh_data", enableRefreshData);

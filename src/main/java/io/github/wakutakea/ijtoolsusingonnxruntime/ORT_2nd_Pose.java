@@ -39,7 +39,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
     public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
         MyOrtSession s = OrtUtil.getSlot(slotChoice);
 
-        GenericDialog gd = new GenericDialog("2nd Pose");
+        GenericDialog gd = new GenericDialog("2nd Pose v" + OrtUtil.VERSION);
         gd.addChoice("slot", OrtUtil.buildSlotLabels(), OrtUtil.buildSlotLabels()[slotChoice]);
         gd.addNumericField("score_threshold", scoreThreshold, 2);
         gd.addNumericField("nms_threshold",   nmsThreshold,   2);
