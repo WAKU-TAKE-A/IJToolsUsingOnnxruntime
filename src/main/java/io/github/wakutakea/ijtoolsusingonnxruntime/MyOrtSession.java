@@ -44,7 +44,8 @@ public class MyOrtSession {
         YOLOX,
         CLASSIFICATION,
         POSE,
-        // Future: HEATMAP, SEGMENTATION, YOLO_E2E
+        SEGMENTATION,
+        OBB,
     }
 
     public enum CoordFormat {
@@ -54,7 +55,10 @@ public class MyOrtSession {
         YOLOX_UNDECODED,
         YOLO_POSE,
         YOLO_POSE_E2E,
-        // Future: HEATMAP, SEGMENTATION
+        YOLO_SEGMENT,
+        YOLO_SEGMENT_E2E,
+        YOLO_OBB,
+        YOLO_OBB_E2E,
     }
 
     // ---------------------------------------------------------------
@@ -130,10 +134,10 @@ public class MyOrtSession {
                      + "This model is likely a Classification model.";
             }
         } else if (shape.length == 3) {
-            // [batch, ...] -> Detection or Pose
+            // [batch, ...] -> Detection, Pose or Segmentation
             if (modelType == ModelType.CLASSIFICATION) {
                 return "Warning: Model output is 3D, but Classification was selected.\n"
-                     + "This model is likely a Detection or Pose model.";
+                     + "This model is likely a Detection, Pose or Segmentation model.";
             }
         }
 
@@ -150,6 +154,20 @@ public class MyOrtSession {
             }
             if (task.contains("class") && modelType != ModelType.CLASSIFICATION) {
                 return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
+            }
+            if (task.contains("segment") && modelType != ModelType.SEGMENTATION) {
+                return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
+            }
+            if (task.contains("obb") && modelType != ModelType.OBB) {
+                return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
+            }
+        }
+
+        // 3. Check outputs for Segmentation
+        if (modelType == ModelType.SEGMENTATION) {
+            if (outMap.size() < 2) {
+                return "Warning: Model output count is " + outMap.size() + ", but SEGMENTATION was selected.\n"
+                     + "YOLO Segmentation models typically have at least 2 outputs.";
             }
         }
 
@@ -204,6 +222,29 @@ public class MyOrtSession {
             case POSE:
                 // Person only
                 numClasses = 1;
+                break;
+            case SEGMENTATION:
+                if (coordFormat == CoordFormat.YOLO_SEGMENT_E2E) {
+                    // E2E: [1, N, 38] = x1,y1,x2,y2,score,classId,32coeffs
+                    // numClasses not derivable from shape; resolved from metadata class names
+                    numClasses = 0;
+                } else if (shape.length >= 3) {
+                    // [1, 4+numClasses+32, numAnchors] or [1, numAnchors, 4+numClasses+32]
+                    long d1 = shape[1], d2 = shape[2];
+                    numClasses = (int) ((d1 < d2 ? d1 : d2) - 4 - 32);
+                }
+                break;
+            case OBB:
+                if (coordFormat == CoordFormat.YOLO_OBB_E2E) {
+                    // E2E: [1, N, 7] = x1,y1,x2,y2,score,classId,angle
+                    // numClasses not derivable from shape; resolved from metadata class names
+                    numClasses = 0;
+                } else if (shape.length >= 3) {
+                    // [1, 5+numClasses, numAnchors] or [1, numAnchors, 5+numClasses]
+                    // Layout: cx,cy,w,h, class0..classN-1, angle  -> 4+N+1 = 5+N
+                    long d1 = shape[1], d2 = shape[2];
+                    numClasses = (int) ((d1 < d2 ? d1 : d2) - 5);
+                }
                 break;
             default:
                 numClasses = 0;

@@ -41,7 +41,11 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
         "YOLO_Class",              // 3
         "YOLO_Pose",               // 4
         "YOLO_Pose_E2E",           // 5
-        "YOLOX_Object_Undecoded",  // 6
+        "YOLO_Segment",            // 6
+        "YOLO_Segment_E2E",        // 7
+        "YOLO_OBB",                // 8
+        "YOLO_OBB_E2E",            // 9
+        "YOLOX_Object_Undecoded",  // 10
     };
 
     // ---------------------------------------------------------------
@@ -263,7 +267,9 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
             case 0: case 1: case 2: return MyOrtSession.ModelType.YOLO;
             case 3:                 return MyOrtSession.ModelType.CLASSIFICATION;
             case 4: case 5:         return MyOrtSession.ModelType.POSE;
-            case 6:                 return MyOrtSession.ModelType.YOLOX;
+            case 6: case 7:         return MyOrtSession.ModelType.SEGMENTATION;
+            case 8: case 9:         return MyOrtSession.ModelType.OBB;
+            case 10:                return MyOrtSession.ModelType.YOLOX;
             default:                return MyOrtSession.ModelType.YOLO;
         }
     }
@@ -276,7 +282,11 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
             case 3:  return MyOrtSession.CoordFormat.YOLO_PIXEL;
             case 4:  return MyOrtSession.CoordFormat.YOLO_POSE;
             case 5:  return MyOrtSession.CoordFormat.YOLO_POSE_E2E;
-            case 6:  return MyOrtSession.CoordFormat.YOLOX_UNDECODED;
+            case 6:  return MyOrtSession.CoordFormat.YOLO_SEGMENT;
+            case 7:  return MyOrtSession.CoordFormat.YOLO_SEGMENT_E2E;
+            case 8:  return MyOrtSession.CoordFormat.YOLO_OBB;
+            case 9:  return MyOrtSession.CoordFormat.YOLO_OBB_E2E;
+            case 10: return MyOrtSession.CoordFormat.YOLOX_UNDECODED;
             default: return MyOrtSession.CoordFormat.YOLO_PIXEL;
         }
     }

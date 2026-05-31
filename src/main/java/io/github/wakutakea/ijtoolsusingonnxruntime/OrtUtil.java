@@ -42,7 +42,7 @@ import java.util.List;
 
 public class OrtUtil {
 
-    public static final String VERSION   = "0.9.3";
+    public static final String VERSION   = "0.9.4";
     public static final int    MAX_SLOTS = 5;
 
     private static OrtEnvironment   env   = null;
