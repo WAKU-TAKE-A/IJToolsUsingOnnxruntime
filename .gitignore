@@ -71,3 +71,5 @@ env/
 *.egg-info/
 
 plan/ 
+models/
+yolo/models/
