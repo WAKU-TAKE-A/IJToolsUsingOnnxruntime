@@ -1,6 +1,7 @@
 # Maven
 _tmp/
 target/
+runs/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
