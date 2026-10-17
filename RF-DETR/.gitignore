@@ -1,0 +1,2 @@
+# Downloaded sources and wheels used during format research; not runtime dependencies.
+.research/

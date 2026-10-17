@@ -226,7 +226,7 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
             }
 
             // 3. NMS (axis-aligned IoU approximation is sufficient for moderate angles)
-            List<float[]> nmsResults = perClassNms(candidates, (float) nmsThreshold);
+            List<float[]> nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
 
             if (enableLog) {
                 IJ.log("Inference time: " + inferenceTime + " ms");
@@ -247,18 +247,6 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
     // ---------------------------------------------------------------
     // NMS
     // ---------------------------------------------------------------
-
-    private List<float[]> perClassNms(List<float[]> candidates, float nmsTh) {
-        List<float[]> results = new ArrayList<>();
-        int maxClass = -1;
-        for (float[] c : candidates) if ((int) c[5] > maxClass) maxClass = (int) c[5];
-        for (int cls = 0; cls <= maxClass; cls++) {
-            List<float[]> clsCandidates = new ArrayList<>();
-            for (float[] c : candidates) if ((int) c[5] == cls) clsCandidates.add(c);
-            if (!clsCandidates.isEmpty()) results.addAll(OrtUtil.nms(clsCandidates, nmsTh));
-        }
-        return results;
-    }
 
     // ---------------------------------------------------------------
     // Output

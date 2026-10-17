@@ -1,4 +1,5 @@
 # Maven
+*.jar
 _tmp/
 target/
 runs/
@@ -74,3 +75,6 @@ env/
 plan/ 
 models/
 yolo/models/
+!RF-DETR/models/
+RF-DETR/models/**
+!RF-DETR/models/README.md

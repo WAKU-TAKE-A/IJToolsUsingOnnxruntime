@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>io.github.wakutakea</groupId>
     <artifactId>IJToolsUsingOnnxruntime</artifactId>
-    <version>0.9.4</version>
+    <version>0.9.5</version>
     <packaging>jar</packaging>
 
     <properties>
@@ -13,6 +13,12 @@
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>junit</groupId>
+            <artifactId>junit</artifactId>
+            <version>4.13.2</version>
+            <scope>test</scope>
+        </dependency>
         <!-- ONNX Runtime -->
         <dependency>
             <groupId>com.microsoft.onnxruntime</groupId>
@@ -30,6 +36,18 @@
 
     <build>
         <finalName>IJTools_UsingOnnxruntime</finalName>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>LICENSE</include>
+                </includes>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>

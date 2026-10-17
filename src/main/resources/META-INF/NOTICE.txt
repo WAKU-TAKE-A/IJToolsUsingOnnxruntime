@@ -1,0 +1,17 @@
+IJToolsUsingOnnxruntime distribution notices
+
+Project license:
+  META-INF/LICENSE
+
+Bundled dependency: Microsoft ONNX Runtime 1.25.1
+  License: MIT
+  Copyright (c) Microsoft Corporation
+  License text: META-INF/licenses/onnxruntime-LICENSE.txt
+  Source: https://github.com/microsoft/onnxruntime/tree/v1.25.1
+  License source: https://github.com/microsoft/onnxruntime/blob/v1.25.1/LICENSE
+
+ONNX Runtime's third-party notices are preserved from its dependency JAR:
+  ThirdPartyNotices.txt
+
+ImageJ is supplied by the host application and is not bundled in this JAR.
+Python packages, model weights, and sample images are not bundled in this JAR.

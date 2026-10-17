@@ -104,6 +104,12 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
             return;
         }
 
+        if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_DETECTION) {
+            RfDetrResults.run(s, ip, imp, slotChoice, scoreThreshold, nmsThreshold, 0.5, 0.5,
+                    showResultsTable, showRoiManager, false, 80, false, enableRefreshData, enableLog);
+            return;
+        }
+
         // Verify if the model is suitable for Detection
         if (s.getModelType() != MyOrtSession.ModelType.YOLO && s.getModelType() != MyOrtSession.ModelType.YOLOX) {
             OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - The model in slot " + slotChoice + " is not a Detection model (" + s.getModelType() + ").");
@@ -154,7 +160,7 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
             if (isE2E) {
                 nmsResults = candidates;
             } else {
-                nmsResults = perClassNms(candidates, (float) nmsThreshold);
+                nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
             }
 
             System.out.println("Inference completed in " + inferenceTime + " ms");
@@ -310,21 +316,6 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
 
             out.add(new float[]{rx, ry, rw, rh, confidence, maxClass});
         }
-    }
-
-    private List<float[]> perClassNms(List<float[]> candidates, float nmsTh) {
-        List<float[]> finalResults = new ArrayList<>();
-        int maxClass = -1;
-        for (float[] c : candidates) if ((int)c[5] > maxClass) maxClass = (int)c[5];
-        
-        for (int cls = 0; cls <= maxClass; cls++) {
-            List<float[]> clsCandidates = new ArrayList<>();
-            for (float[] c : candidates) if ((int)c[5] == cls) clsCandidates.add(c);
-            if (!clsCandidates.isEmpty()) {
-                finalResults.addAll(OrtUtil.nms(clsCandidates, nmsTh));
-            }
-        }
-        return finalResults;
     }
 
     private void outputResults(List<float[]> results, MyOrtSession s, String imageTitle, long inferenceTime) {

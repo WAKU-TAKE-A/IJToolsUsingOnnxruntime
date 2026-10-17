@@ -42,7 +42,7 @@ import java.util.List;
 
 public class OrtUtil {
 
-    public static final String VERSION   = "0.9.4";
+    public static final String VERSION   = "0.9.5";
     public static final int    MAX_SLOTS = 5;
 
     private static OrtEnvironment   env   = null;
@@ -224,31 +224,7 @@ public class OrtUtil {
      * @return surviving detections sorted by confidence (descending)
      */
     public static List<float[]> nms(List<float[]> boxes, float nmsThreshold) {
-        boxes.sort((a, b) -> Float.compare(b[4], a[4]));
-        List<float[]>  result     = new ArrayList<>();
-        boolean[]      suppressed = new boolean[boxes.size()];
-
-        for (int i = 0; i < boxes.size(); i++) {
-            if (suppressed[i]) continue;
-            result.add(boxes.get(i));
-            for (int j = i + 1; j < boxes.size(); j++) {
-                if (suppressed[j]) continue;
-                if (iou(boxes.get(i), boxes.get(j)) > nmsThreshold) {
-                    suppressed[j] = true;
-                }
-            }
-        }
-        return result;
-    }
-
-    private static float iou(float[] a, float[] b) {
-        float ax2 = a[0] + a[2], ay2 = a[1] + a[3];
-        float bx2 = b[0] + b[2], by2 = b[1] + b[3];
-        float iw  = Math.max(0, Math.min(ax2, bx2) - Math.max(a[0], b[0]));
-        float ih  = Math.max(0, Math.min(ay2, by2) - Math.max(a[1], b[1]));
-        float inter = iw * ih;
-        float union = a[2] * a[3] + b[2] * b[3] - inter;
-        return (union <= 0) ? 0 : inter / union;
+        return Nms.classAgnostic(boxes, nmsThreshold);
     }
 
     // ---------------------------------------------------------------

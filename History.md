@@ -1,5 +1,25 @@
 # 開発履歴 - IJToolsUsingOnnxruntime
 
+## [0.9.5] - 2026-10-17
+
+### 追加
+- 共通クラス `Nms` に NMS を集約。RF-DETR の3タスクにもクラス別 NMS を追加し、`nms_threshold` を有効化。
+- Roboflow RF-DETR の物体検出、インスタンスセグメンテーション、姿勢推定（Keypoint Preview）に対応。
+- 既存のモデル管理に `RF_DETR_Object` / `RF_DETR_Segment` / `RF_DETR_Pose` を追加。
+- RF-DETR 専用の前処理、global top-K、マスク補間、キーポイントの uncertainty fusion と、その後の追加 NMS を実装。
+- `RF-DETR/` に仮想環境セットアップ、Apache-2.0 モデルの取得・ONNX 変換、Java と公式 Python の比較スクリプトを追加。
+- サンプル画像による3タスクの実推論と ImageJ マクロを検証。モデル・サンプル・検証画像は `RF-DETR/models/` に保存。
+
+### 修正
+- 配布 JAR に本プロジェクトと ONNX Runtime の MIT ライセンス全文・同梱内容の案内を追加。
+- モデル読み込みダイアログの確定値を明示的に取得し、マクロで追加形式を選択できるようにした。
+- 推論入力テンソルとセッション設定を try-with-resources で解放するようにした。
+- YOLO の仮想環境セットアップを、起動時のカレントディレクトリに依存しないよう修正。
+
+### ドキュメント
+- RF-DETR と YOLO のスクリプトの実行方法・制約を各 README に整理。
+- エージェント向けのコード地図 `README_AI.md` を追加。
+
 ## [0.9.2] - 2026-05-07
 
 ### 追加

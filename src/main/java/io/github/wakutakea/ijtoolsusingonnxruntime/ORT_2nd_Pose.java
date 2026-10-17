@@ -107,6 +107,12 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
             return;
         }
 
+        if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_POSE) {
+            RfDetrResults.run(s, ip, imp, slotChoice, scoreThreshold, nmsThreshold, 0.5, kptThreshold,
+                    false, showRoiManager, false, 80, false, enableRefreshData, enableLog);
+            return;
+        }
+
         // Verify if the model is suitable for Pose
         if (s.getModelType() != MyOrtSession.ModelType.POSE) {
             OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - The model in slot " + slotChoice + " is not a Pose model (" + s.getModelType() + ").");
@@ -149,7 +155,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
             if (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_POSE_E2E) {
                 results = candidates;
             } else {
-                results = OrtUtil.nms(candidates, (float) nmsThreshold);
+                results = Nms.classAgnostic(candidates, (float) nmsThreshold);
             }
 
             if (enableLog) {

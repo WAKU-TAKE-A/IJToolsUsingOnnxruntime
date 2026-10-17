@@ -46,6 +46,9 @@ public class MyOrtSession {
         POSE,
         SEGMENTATION,
         OBB,
+        RF_DETR_DETECTION,
+        RF_DETR_SEGMENTATION,
+        RF_DETR_POSE,
     }
 
     public enum CoordFormat {
@@ -59,6 +62,7 @@ public class MyOrtSession {
         YOLO_SEGMENT_E2E,
         YOLO_OBB,
         YOLO_OBB_E2E,
+        RF_DETR,
     }
 
     // ---------------------------------------------------------------
@@ -100,8 +104,9 @@ public class MyOrtSession {
         release(); // release any existing session first
 
         OrtEnvironment env = OrtUtil.getEnv();
-        OrtSession.SessionOptions opts = new OrtSession.SessionOptions();
-        this.session     = env.createSession(modelPath, opts);
+        try (OrtSession.SessionOptions opts = new OrtSession.SessionOptions()) {
+            this.session = env.createSession(modelPath, opts);
+        }
         this.modelPath   = modelPath;
         this.modelName   = new File(modelPath).getName();
         this.modelType   = type;
@@ -119,6 +124,7 @@ public class MyOrtSession {
      */
     public String validateFormat() throws OrtException {
         if (session == null) return null;
+        if (isRfDetr()) return RfDetrInference.validate(this);
         
         Map<String, NodeInfo> outMap = session.getOutputInfo();
         if (outMap.isEmpty()) return null;
@@ -200,6 +206,15 @@ public class MyOrtSession {
         long[] shape = ((TensorInfo) ni.getInfo()).getShape();
 
         switch (modelType) {
+            case RF_DETR_DETECTION:
+            case RF_DETR_SEGMENTATION:
+            case RF_DETR_POSE:
+                NodeInfo labels = outMap.get("labels");
+                if (labels != null && labels.getInfo() instanceof TensorInfo) {
+                    long[] dims = ((TensorInfo) labels.getInfo()).getShape();
+                    if (dims.length == 3 && dims[2] > 0) numClasses = (int) dims[2];
+                }
+                break;
             case YOLO:
                 if (coordFormat == CoordFormat.YOLO_OBJECT_E2E) {
                     // E2E: [1, N, 6] - numClasses not derivable from shape;
@@ -275,12 +290,10 @@ public class MyOrtSession {
     public OrtSession.Result runInference(float[] inputData) throws OrtException {
         OrtEnvironment env   = OrtUtil.getEnv();
         long[]   shape       = {1, 3, inputHeight, inputWidth};
-        OnnxTensor tensor    = OnnxTensor.createTensor(env, FloatBuffer.wrap(inputData), shape);
-        String inputName     = session.getInputNames().iterator().next();
-        Map<String, OnnxTensor> inputs = Collections.singletonMap(inputName, tensor);
-        OrtSession.Result result = session.run(inputs);
-        tensor.close();
-        return result;
+        try (OnnxTensor tensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(inputData), shape)) {
+            String inputName = session.getInputNames().iterator().next();
+            return session.run(Collections.singletonMap(inputName, tensor));
+        }
     }
 
     // ---------------------------------------------------------------
@@ -375,6 +388,11 @@ public class MyOrtSession {
     // ---------------------------------------------------------------
 
     public boolean     isLoaded()          { return loaded; }
+    public boolean isRfDetr() {
+        return modelType == ModelType.RF_DETR_DETECTION
+            || modelType == ModelType.RF_DETR_SEGMENTATION
+            || modelType == ModelType.RF_DETR_POSE;
+    }
     public String      getModelPath()      { return modelPath; }
     public String      getModelName()      { return modelName; }
     public ModelType   getModelType()      { return modelType; }

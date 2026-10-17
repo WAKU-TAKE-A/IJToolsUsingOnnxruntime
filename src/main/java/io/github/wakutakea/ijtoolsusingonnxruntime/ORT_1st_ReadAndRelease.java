@@ -46,6 +46,9 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
         "YOLO_OBB",                // 8
         "YOLO_OBB_E2E",            // 9
         "YOLOX_Object_Undecoded",  // 10
+        "RF_DETR_Object",         // 11
+        "RF_DETR_Segment",        // 12
+        "RF_DETR_Pose",           // 13
     };
 
     // ---------------------------------------------------------------
@@ -84,6 +87,12 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
         gd.showDialog();
         if (gd.wasCanceled()) return DONE;
+
+        actionChoice = gd.getNextChoiceIndex();
+        modelPath = OrtUtil.trimQuotes(gd.getNextString());
+        formatChoice = gd.getNextChoiceIndex();
+        slotChoice = gd.getNextChoiceIndex();
+        enableLog = gd.getNextBoolean();
 
         // Final validation before run()
         if (actionChoice == 0) { // read_model
@@ -181,8 +190,9 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
             // Validate if the selected format matches the model's structure/metadata
             String warning = s.validateFormat();
-            if (warning != null && !IJ.isMacro()) {
+            if (warning != null && (s.isRfDetr() || !IJ.isMacro())) {
                 OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - " + warning);
+                s.release();
                 return; // Stop loading if there's a mismatch
             }
 
@@ -270,6 +280,9 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
             case 6: case 7:         return MyOrtSession.ModelType.SEGMENTATION;
             case 8: case 9:         return MyOrtSession.ModelType.OBB;
             case 10:                return MyOrtSession.ModelType.YOLOX;
+            case 11:                return MyOrtSession.ModelType.RF_DETR_DETECTION;
+            case 12:                return MyOrtSession.ModelType.RF_DETR_SEGMENTATION;
+            case 13:                return MyOrtSession.ModelType.RF_DETR_POSE;
             default:                return MyOrtSession.ModelType.YOLO;
         }
     }
@@ -287,6 +300,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
             case 8:  return MyOrtSession.CoordFormat.YOLO_OBB;
             case 9:  return MyOrtSession.CoordFormat.YOLO_OBB_E2E;
             case 10: return MyOrtSession.CoordFormat.YOLOX_UNDECODED;
+            case 11: case 12: case 13: return MyOrtSession.CoordFormat.RF_DETR;
             default: return MyOrtSession.CoordFormat.YOLO_PIXEL;
         }
     }

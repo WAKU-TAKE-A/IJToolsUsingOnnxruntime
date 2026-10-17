@@ -126,6 +126,13 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
             return;
         }
 
+        if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_SEGMENTATION) {
+            RfDetrResults.run(s, ip, imp, slotChoice, scoreThreshold, nmsThreshold, maskThreshold, 0.5,
+                    showResultsTable, showRoiManager, showOverlay, overlayAlpha, exportMask,
+                    enableRefreshData, enableLog);
+            return;
+        }
+
         if (s.getModelType() != MyOrtSession.ModelType.SEGMENTATION) {
             OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - The model in slot " + slotChoice + " is not a Segmentation model.");
             return;
@@ -253,7 +260,7 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
             }
 
             // NMS
-            List<float[]> nmsResults = perClassNms(candidates, (float) nmsThreshold);
+            List<float[]> nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
 
             if (enableLog) {
                 IJ.log("Inference time: " + inferenceTime + " ms");
@@ -269,21 +276,6 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
             t.printStackTrace();
             OrtUtil.logError(this.getClass().getSimpleName(), "Segmentation inference failed: " + t.toString());
         }
-    }
-
-    private List<float[]> perClassNms(List<float[]> candidates, float nmsTh) {
-        List<float[]> finalResults = new ArrayList<>();
-        int maxClass = -1;
-        for (float[] c : candidates) if ((int)c[5] > maxClass) maxClass = (int)c[5];
-        
-        for (int cls = 0; cls <= maxClass; cls++) {
-            List<float[]> clsCandidates = new ArrayList<>();
-            for (float[] c : candidates) if ((int)c[5] == cls) clsCandidates.add(c);
-            if (!clsCandidates.isEmpty()) {
-                finalResults.addAll(OrtUtil.nms(clsCandidates, nmsTh));
-            }
-        }
-        return finalResults;
     }
 
     private void outputSegmentationResults(List<float[]> results, float[][][] proto, int protoH, int protoW, 

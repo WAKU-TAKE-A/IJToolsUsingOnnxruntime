@@ -69,7 +69,7 @@ def convert(model_path, classes_file=None):
     
     print("Exporting to ONNX format...")
     # Export the model. 
-    # opset=12 is generally well-supported by OpenCV's DNN module.
+    # Legacy export setting; validate the resulting ONNX with the Java/ImageJ plugin.
     path = model.export(format='onnx', opset=12)
     print(f"Model exported to: {path}")
 
