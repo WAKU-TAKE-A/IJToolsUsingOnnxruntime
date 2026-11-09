@@ -31,7 +31,7 @@ export 仕様を変えるときは、固定版数とこの文書を一緒に更�
 | スクリプト | 入力と用途 | 出力・書き込み |
 |---|---|---|
 | `download_and_convert.py` | モデル名を1引数。省略時 `yolov8n-seg`。`--opset`、`--end2end` 指定可 | スクリプト隣の `models/` に `.pt`、`.onnx`、クラス名 `.txt`、`<モデル>.onnx.manifest.json` |
-| `convert.py` | `<model_path> [classes_file]`、旧変換とクラス絞り込み | Ultralytics が返す場所に ONNX。絞り込み時はその ONNX を上書き |
+| `convert.py` | `<model_path> [classes_file]`、旧変換とクラス絞り込み | Ultralytics が返す場所に ONNX。絞り込み時は `<name>_trimmed.onnx` へ別出力（上書きなし）。生成した ONNX の隣に manifest |
 | `inspect_onnx.py` | ONNX の入力・出力名、形状、要素型の確認 | コンソールのみ。モデルは変更しない |
 | `verify_yolo.py` | Java ハーネス（YoloSmoke）と Python リファレンスの NMS 前比較（検出の標準形式のみ） | `models/verification/` に `java.log`、`report.json`、ハーネス出力 |
 | `extract_names.py` | ONNX の `names` メタデータを抽出 | ONNX と同じ場所・同じ stem の `.txt` を UTF-8 で作成・上書き |
@@ -71,9 +71,10 @@ try {
 - 第1出力が `[batch,4+classes,anchors]` の通常物体検出であることを前提に、軸1へ Gather を追加します。
 - Pose、Seg、OBB、E2E、転置された出力を一般的に扱う機能ではありません。
 - 絞り込み後のクラス ID は入力一覧の順に 0 から振り直します。
-- 元の export 済み ONNX を上書きします。保持したい ONNX と別の作業先で実行してください。
-- ID の重複・範囲検証がなく、数字でない行は無視し、指定ファイルが存在しない場合も明示的に失敗しません。
-- 出力の batch / anchor 軸を動的にするので、Java 側のクラス数・レイアウト推定との適合確認が必要です。
+- 絞り込み結果は `<name>_trimmed.onnx` へ別出力し、元の export 済み ONNX は変更しません。
+- クラス ID の重複・範囲外・数字でない行・ファイル不存在は明示的にエラーで終了します。
+- 絞り込み後は InferenceSession での推論スモーク（出力チャンネル数の確認付き）と manifest 出力が必須です。
+- 出力の batch / anchor 軸を動的にするので、Java 側のクラス数・レイアウト推定との適合確認は引き続き必要です。
 
 ## ImageJ 側の形式指定
 
