@@ -6,7 +6,6 @@ import ij.ImagePlus;
 import ij.gui.GenericDialog;
 import ij.process.ImageProcessor;
 import ai.onnxruntime.*;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -105,12 +104,9 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
         int imgH    = ip.getHeight();
         String imageTitle = imp.getShortTitle();
 
-        // 1. Preprocess
-        float[] inputData = preprocess(s, ip);
-        float[] lbParams  = letterboxParams(s, ip);
-        float scale   = lbParams[0];
-        float padLeft = lbParams[1];
-        float padTop  = lbParams[2];
+        // 1. Preprocess (contract-driven; tensor + coordinate transform in one pass)
+        Preprocessor.Result prep = prepareInput(s, ip);
+        float[] inputData = prep.tensor();
 
         // 2. Inference
         long timer = startTimer();
@@ -122,27 +118,12 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
             float[][][] raw = (float[][][]) outTensor.getValue(); // [1, d1, d2]
             float[][] data = raw[0]; // [d1, d2]
 
-            List<float[]> candidates = new ArrayList<>();
+            List<Detection> candidates = YoloDecoder.decodeDetection(
+                    data, isYolox(s), s.getCoordFormat(), s.getNumClasses(), imgW, imgH,
+                    (float) scoreThreshold, prep.transform(), targetW, targetH);
 
-            if (s.getModelType() == MyOrtSession.ModelType.YOLOX) {
-                parseYOLOX(data, s.getNumClasses(), imgW, imgH,
-                           (float) scoreThreshold, scale, padLeft, padTop, targetW, candidates);
-            } else if (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_OBJECT_E2E) {
-                parseYOLO_E2E(data, imgW, imgH,
-                              (float) scoreThreshold, scale, padLeft, padTop, candidates);
-            } else {
-                parseYOLO(data, s.getNumClasses(), s.getCoordFormat(), imgW, imgH,
-                          (float) scoreThreshold, scale, padLeft, padTop, targetW, targetH, candidates);
-            }
-
-            // 4. Per-class NMS (skip for E2E: model already performed NMS)
-            List<float[]> nmsResults;
-            boolean isE2E = (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_OBJECT_E2E);
-            if (isE2E) {
-                nmsResults = candidates;
-            } else {
-                nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
-            }
+            // 4. NMS per the contract's policy (E2E formats pass through)
+            List<Detection> nmsResults = PostProcessors.applyNms(candidates, contractOf(s), (float) nmsThreshold);
 
             if (enableLog) {
                 IJ.log("Inference time: " + inferenceTime + " ms");
@@ -159,154 +140,19 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
         }
     }
 
-    // ---------------------------------------------------------------
-    // YOLO parser
-    // ---------------------------------------------------------------
-
-    private void parseYOLO(float[][] data, int numClasses, MyOrtSession.CoordFormat fmt,
-                           int imgW, int imgH, float scoreTh,
-                           float scale, float padLeft, float padTop,
-                           int inputW, int inputH, List<float[]> out) {
-
-        int d1 = data.length;
-        int d2 = data[0].length;
-        int C  = 4 + numClasses;
-
-        boolean channelFirst = (d1 == C && d1 < d2);
-        int numAnchors = channelFirst ? d2 : d1;
-
-        for (int i = 0; i < numAnchors; i++) {
-            float cx = channelFirst ? data[0][i] : data[i][0];
-            float cy = channelFirst ? data[1][i] : data[i][1];
-            float w  = channelFirst ? data[2][i] : data[i][2];
-            float h  = channelFirst ? data[3][i] : data[i][3];
-
-            float maxScore = -1;
-            int   maxClass = 0;
-            for (int c = 0; c < numClasses; c++) {
-                float sc = channelFirst ? data[4 + c][i] : data[i][4 + c];
-                if (sc > maxScore) { maxScore = sc; maxClass = c; }
-            }
-            if (maxScore < scoreTh) continue;
-
-            float bx, by, bw, bh;
-            if (fmt == MyOrtSession.CoordFormat.YOLO_NORMALIZED) {
-                bw = w * inputW;
-                bh = h * inputH;
-                bx = cx * inputW - bw / 2;
-                by = cy * inputH - bh / 2;
-            } else {
-                bw = w;
-                bh = h;
-                bx = cx - bw / 2;
-                by = cy - bh / 2;
-            }
-
-            float[] restored = OrtUtil.restoreBbox(bx, by, bw, bh, scale, padLeft, padTop);
-            float rx = Math.max(0, Math.min(restored[0], imgW));
-            float ry = Math.max(0, Math.min(restored[1], imgH));
-            float rw = Math.max(0, Math.min(restored[2], imgW - rx));
-            float rh = Math.max(0, Math.min(restored[3], imgH - ry));
-            if (rw <= 0 || rh <= 0) continue;
-
-            out.add(new float[]{rx, ry, rw, rh, maxScore, maxClass});
-        }
-    }
-
-    private void parseYOLO_E2E(float[][] data, int imgW, int imgH, float scoreTh,
-                               float scale, float padLeft, float padTop,
-                               List<float[]> out) {
-        int numDetections = data.length;
-        for (int i = 0; i < numDetections; i++) {
-            float x1      = data[i][0];
-            float y1      = data[i][1];
-            float x2      = data[i][2];
-            float y2      = data[i][3];
-            float score   = data[i][4];
-            int   classId = (int) data[i][5];
-
-            if (score < scoreTh) continue;
-
-            float bw = x2 - x1;
-            float bh = y2 - y1;
-            float[] restored = OrtUtil.restoreBbox(x1, y1, bw, bh, scale, padLeft, padTop);
-            float rx = Math.max(0, Math.min(restored[0], imgW));
-            float ry = Math.max(0, Math.min(restored[1], imgH));
-            float rw = Math.max(0, Math.min(restored[2], imgW - rx));
-            float rh = Math.max(0, Math.min(restored[3], imgH - ry));
-            if (rw <= 0 || rh <= 0) continue;
-
-            out.add(new float[]{rx, ry, rw, rh, score, classId});
-        }
-    }
-
-    private void parseYOLOX(float[][] data, int numClasses, int imgW, int imgH,
-                            float scoreTh, float scale, float padLeft, float padTop,
-                            int inputW, List<float[]> out) {
-
-        int[] strides = {8, 16, 32};
-        int[][] gridStride = OrtUtil.makeGridStride(inputW, strides);
-        int[] grid   = gridStride[0];
-        int[] stride = gridStride[1];
-
-        int numAnchors = data.length;
-        for (int i = 0; i < numAnchors; i++) {
-            float tx  = data[i][0];
-            float ty  = data[i][1];
-            float tw  = data[i][2];
-            float th  = data[i][3];
-            float obj = data[i][4];
-
-            float maxClsScore = -1;
-            int   maxClass    = 0;
-            for (int c = 0; c < numClasses; c++) {
-                float sc = data[i][5 + c];
-                if (sc > maxClsScore) { maxClsScore = sc; maxClass = c; }
-            }
-
-            // Confidence calculation consistent with previous OCV implementation
-            float confidence = (float)(Math.sqrt(Math.max(0, obj)) * maxClsScore);
-            if (confidence < scoreTh) continue;
-
-            // Decode grid coordinates
-            int gx = grid[i * 2];
-            int gy = grid[i * 2 + 1];
-            int s  = stride[i];
-
-            double cx = (tx + gx) * s;
-            double cy = (ty + gy) * s;
-            double w  = Math.exp(tw) * s;
-            double h  = Math.exp(th) * s;
-
-            float bx = (float)(cx - w / 2);
-            float by = (float)(cy - h / 2);
-            float bw = (float)w;
-            float bh = (float)h;
-
-            float[] restored = OrtUtil.restoreBbox(bx, by, bw, bh, scale, padLeft, padTop);
-            float rx = Math.max(0, Math.min(restored[0], imgW));
-            float ry = Math.max(0, Math.min(restored[1], imgH));
-            float rw = Math.max(0, Math.min(restored[2], imgW - rx));
-            float rh = Math.max(0, Math.min(restored[3], imgH - ry));
-            if (rw <= 0 || rh <= 0) continue;
-
-            out.add(new float[]{rx, ry, rw, rh, confidence, maxClass});
-        }
-    }
-
-    private void outputResults(List<float[]> results, MyOrtSession s, String imageTitle, long inferenceTime) {
+    private void outputResults(List<Detection> results, MyOrtSession s, String imageTitle, long inferenceTime) {
         if (showResultsTable) {
             ij.measure.ResultsTable rt = OrtUtil.getResultsTable(enableRefreshData);
-            for (float[] r : results) {
+            for (Detection r : results) {
                 rt.incrementCounter();
                 rt.addValue("Image", imageTitle);
                 rt.addValue("Slot",  slotChoice);
-                rt.addValue("Label", s.resolveClassName((int)r[5]));
-                rt.addValue("Confidence", r[4]);
-                rt.addValue("X", r[0]);
-                rt.addValue("Y", r[1]);
-                rt.addValue("W", r[2]);
-                rt.addValue("H", r[3]);
+                rt.addValue("Label", s.resolveClassName(r.classId()));
+                rt.addValue("Confidence", r.score());
+                rt.addValue("X", r.x());
+                rt.addValue("Y", r.y());
+                rt.addValue("W", r.width());
+                rt.addValue("H", r.height());
                 rt.addValue("Inference(ms)", inferenceTime);
             }
             rt.show("Results");
@@ -314,10 +160,10 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
 
         if (showRoiManager) {
             ij.plugin.frame.RoiManager rm = OrtUtil.getRoiManager(enableRefreshData, false);
-            for (float[] r : results) {
-                ij.gui.Roi roi = new ij.gui.Roi(r[0], r[1], r[2], r[3]);
-                roi.setName(s.resolveClassName((int)r[5]) + " (" + String.format("%.2f", r[4]) + ")");
-                roi.setStrokeColor(OrtUtil.getColorForClass((int)r[5]));
+            for (Detection r : results) {
+                ij.gui.Roi roi = new ij.gui.Roi(r.x(), r.y(), r.width(), r.height());
+                roi.setName(s.resolveClassName(r.classId()) + " (" + String.format("%.2f", r.score()) + ")");
+                roi.setStrokeColor(OrtUtil.getColorForClass(r.classId()));
                 rm.addRoi(roi);
             }
         }

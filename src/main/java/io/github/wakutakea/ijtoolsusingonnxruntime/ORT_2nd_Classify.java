@@ -94,26 +94,26 @@ public class ORT_2nd_Classify extends AbstractOrt2ndPlugin {
             float[] probs = raw[0];
 
             // 4. Get top-K
-            int[] topIndices = getTopK(probs, topK);
+            java.util.List<ClassifyDecoder.Entry> entries = ClassifyDecoder.decode(probs, topK);
 
             if (enableLog) {
                 IJ.log("Inference time: " + inferenceTime + " ms");
-                for (int i = 0; i < topIndices.length; i++) {
-                    int idx = topIndices[i];
-                    IJ.log("Top " + (i+1) + ": " + s.resolveClassName(idx) + " (" + String.format("%.4f", probs[idx]) + ")");
+                for (int i = 0; i < entries.size(); i++) {
+                    ClassifyDecoder.Entry e = entries.get(i);
+                    IJ.log("Top " + (i+1) + ": " + s.resolveClassName(e.classId()) + " (" + String.format("%.4f", e.score()) + ")");
                 }
                 IJ.log("=".repeat(60));
             }
 
             // 5. Output to Results Table
             ResultsTable rt = OrtUtil.getResultsTable(enableRefreshData);
-            for (int i = 0; i < topIndices.length; i++) {
-                int idx = topIndices[i];
+            for (int i = 0; i < entries.size(); i++) {
+                ClassifyDecoder.Entry e = entries.get(i);
                 rt.incrementCounter();
                 rt.addValue("Image", imageTitle);
                 rt.addValue("Rank",  i + 1);
-                rt.addValue("Label", s.resolveClassName(idx));
-                rt.addValue("Score", probs[idx]);
+                rt.addValue("Label", s.resolveClassName(e.classId()));
+                rt.addValue("Score", e.score());
                 rt.addValue("Inference(ms)", inferenceTime);
             }
             rt.show("Results");
@@ -123,27 +123,4 @@ public class ORT_2nd_Classify extends AbstractOrt2ndPlugin {
         }
     }
 
-    private int[] getTopK(float[] probs, int k) {
-        int n = probs.length;
-        int actualK = Math.min(k, n);
-        int[] indices = new int[n];
-        for (int i = 0; i < n; i++) indices[i] = i;
-
-        // Simple selection sort for top-K (fine for typical class counts)
-        for (int i = 0; i < actualK; i++) {
-            int maxIdx = i;
-            for (int j = i + 1; j < n; j++) {
-                if (probs[indices[j]] > probs[indices[maxIdx]]) {
-                    maxIdx = j;
-                }
-            }
-            int temp = indices[i];
-            indices[i] = indices[maxIdx];
-            indices[maxIdx] = temp;
-        }
-
-        int[] result = new int[actualK];
-        System.arraycopy(indices, 0, result, 0, actualK);
-        return result;
-    }
 }

@@ -105,12 +105,9 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
         int imgH       = ip.getHeight();
         String imgTitle = imp.getShortTitle();
 
-        // 1. Preprocess
-        float[] inputData = preprocess(s, ip);
-        float[] lbParams  = letterboxParams(s, ip);
-        float scale   = lbParams[0];
-        float padLeft = lbParams[1];
-        float padTop  = lbParams[2];
+        // 1. Preprocess (contract-driven; tensor + coordinate transform in one pass)
+        Preprocessor.Result prep = prepareInput(s, ip);
+        float[] inputData = prep.tensor();
 
         // 2. Inference
         long timer = startTimer();
@@ -121,82 +118,14 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
             float[][][] raw0 = (float[][][]) t0.getValue();
             float[][] data   = raw0[0];
 
-            int d1 = data.length;
-            int d2 = data[0].length;
             int numClasses = s.getNumClasses();
 
-            // Candidates float[11] = [bx, by, env_w, env_h, score, classId, angle, cx, cy, w, h]
-            // We compute the axis-aligned envelope (bx,by,env_w,env_h) strictly for the IoU NMS approximation.
-            List<float[]> candidates = new ArrayList<>();
+            List<Detection> candidates = YoloDecoder.decodeObb(
+                    data, numClasses, s.getCoordFormat(), (float) scoreThreshold, prep.transform());
 
-            if (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_OBB_E2E) {
-                // E2E format: [1, N, 7] = cx, cy, w, h, score, classId, angle
-                for (int i = 0; i < d1; i++) {
-                    float score = data[i][4];
-                    if (score < scoreThreshold) continue;
-                    float cx = data[i][0];
-                    float cy = data[i][1];
-                    float w  = data[i][2];
-                    float h  = data[i][3];
-                    int classId = (int) data[i][5];
-                    float angle = data[i][6];
-
-                    if (w <= 0 || h <= 0) continue;
-
-                    // Calculate axis-aligned envelope for NMS
-                    float cosA = (float) Math.abs(Math.cos(angle));
-                    float sinA = (float) Math.abs(Math.sin(angle));
-                    float envW = w * cosA + h * sinA;
-                    float envH = w * sinA + h * cosA;
-                    float bx = cx - envW / 2.0f;
-                    float by = cy - envH / 2.0f;
-
-                    candidates.add(new float[]{bx, by, envW, envH, score, classId, angle, cx, cy, w, h});
-                }
-            } else {
-                // Standard format: [1, 5+numClasses, numAnchors] or [1, numAnchors, 5+numClasses]
-                // Per anchor: cx,cy,w,h, class0..classN-1, angle
-                int C = 5 + numClasses;
-                boolean channelFirst = (d1 == C && d1 < d2);
-                int numAnchors = channelFirst ? d2 : d1;
-
-                for (int i = 0; i < numAnchors; i++) {
-                    float cx = channelFirst ? data[0][i] : data[i][0];
-                    float cy = channelFirst ? data[1][i] : data[i][1];
-                    float w  = channelFirst ? data[2][i] : data[i][2];
-                    float h  = channelFirst ? data[3][i] : data[i][3];
-
-                    float maxScore = -1.0f;
-                    int   maxClass = 0;
-                    for (int c = 0; c < numClasses; c++) {
-                        float sc = channelFirst ? data[4 + c][i] : data[i][4 + c];
-                        if (sc > maxScore) { maxScore = sc; maxClass = c; }
-                    }
-
-                    if (maxScore < scoreThreshold) continue;
-
-                    float angle = channelFirst ? data[4 + numClasses][i] : data[i][4 + numClasses];
-
-                    // Calculate axis-aligned envelope for NMS
-                    float cosA = (float) Math.abs(Math.cos(angle));
-                    float sinA = (float) Math.abs(Math.sin(angle));
-                    float envW = w * cosA + h * sinA;
-                    float envH = w * sinA + h * cosA;
-                    float bx = cx - envW / 2.0f;
-                    float by = cy - envH / 2.0f;
-
-                    candidates.add(new float[]{bx, by, envW, envH, maxScore, maxClass, angle, cx, cy, w, h});
-                }
-            }
-
-            // 3. NMS (axis-aligned IoU approximation is sufficient for moderate angles;
-            //    skip for E2E: model already performed NMS, as in Detection/Pose)
-            List<float[]> nmsResults;
-            if (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_OBB_E2E) {
-                nmsResults = candidates;
-            } else {
-                nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
-            }
+            // 3. NMS per the contract's policy (axis-aligned envelope IoU
+            //    approximation, as before; E2E formats pass through)
+            List<Detection> nmsResults = PostProcessors.applyNms(candidates, contractOf(s), (float) nmsThreshold);
 
             if (enableLog) {
                 IJ.log("Inference time: " + inferenceTime + " ms");
@@ -206,7 +135,7 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
             }
 
             // 4. Output
-            outputObbResults(nmsResults, scale, padLeft, padTop, imgW, imgH, imgTitle, s, inferenceTime);
+            outputObbResults(nmsResults, imgW, imgH, imgTitle, s, inferenceTime);
 
         } catch (Throwable t) {
             handleInferenceFailure("OBB inference failed: ", t);
@@ -217,8 +146,7 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
     // Output
     // ---------------------------------------------------------------
 
-    private void outputObbResults(List<float[]> results,
-                                  float scale, float padLeft, float padTop,
+    private void outputObbResults(List<Detection> results,
                                   int imgW, int imgH,
                                   String imageTitle, MyOrtSession s, long inferenceTime) {
 
@@ -235,20 +163,15 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
         ij.measure.ResultsTable rt = null;
         if (showResultsTable) rt = OrtUtil.getResultsTable(enableRefreshData);
 
-        for (float[] r : results) {
-            float score = r[4];
-            int classId = (int) r[5];
-            float angle = r[6];   // radians
-            float cx_lb = r[7];
-            float cy_lb = r[8];
-            float w_lb  = r[9];
-            float h_lb  = r[10];
-
-            // Restore directly from letterbox center to original space
-            float cx = (cx_lb - padLeft) / scale;
-            float cy = (cy_lb - padTop) / scale;
-            float rw = w_lb / scale;
-            float rh = h_lb / scale;
+        for (Detection r : results) {
+            float score = r.score();
+            int classId = r.classId();
+            float angle = r.angle();   // radians
+            // Center/size in original space (restored by the decoder)
+            float rw = r.width();
+            float rh = r.height();
+            float cx = r.x() + rw / 2;
+            float cy = r.y() + rh / 2;
 
             if (rw <= 0 || rh <= 0) continue;
 

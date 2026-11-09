@@ -127,12 +127,10 @@ public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
         int imgH    = ip.getHeight();
         String imageTitle = imp.getShortTitle();
 
-        // 1. Preprocess
-        float[] inputData = preprocess(s, ip);
-        float[] lbParams  = letterboxParams(s, ip);
-        float scale   = lbParams[0];
-        float padLeft = lbParams[1];
-        float padTop  = lbParams[2];
+        // 1. Preprocess (contract-driven; tensor + coordinate transform in one pass)
+        Preprocessor.Result prep = prepareInput(s, ip);
+        float[] inputData = prep.tensor();
+        Preprocessor.Transform tf = prep.transform();
 
         // 2. Inference
         long timer = startTimer();
@@ -174,81 +172,13 @@ public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
             int protoH = proto[0].length;
             int protoW = proto[0][0].length;
 
-            int d1 = data0.length;
-            int d2 = data0[0].length;
             int numClasses = s.getNumClasses();
 
-            List<float[]> candidates = new ArrayList<>();
+            List<Detection> candidates = YoloDecoder.decodeSegmentation(
+                    data0, numClasses, s.getCoordFormat(), (float) scoreThreshold, tf);
 
-            if (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_SEGMENT_E2E) {
-                // E2E format: [1, N, 38] = x1,y1,x2,y2 (letterbox px), score, classId, 32 coeffs
-                int numDetections = d1;  // e.g. 300
-                for (int i = 0; i < numDetections; i++) {
-                    float score   = data0[i][4];
-                    if (score < scoreThreshold) continue;
-
-                    float x1 = data0[i][0];
-                    float y1 = data0[i][1];
-                    float x2 = data0[i][2];
-                    float y2 = data0[i][3];
-                    int   classId = (int) data0[i][5];
-
-                    float[] cand = new float[6 + 32];
-                    cand[0] = x1;          // bx = x1 in letterbox space
-                    cand[1] = y1;          // by = y1 in letterbox space
-                    cand[2] = x2 - x1;    // bw
-                    cand[3] = y2 - y1;    // bh
-                    cand[4] = score;
-                    cand[5] = classId;
-                    for (int j = 0; j < 32; j++) cand[6 + j] = data0[i][6 + j];
-                    candidates.add(cand);
-                }
-            } else {
-                // Standard format: [1, 4+numClasses+32, numAnchors] or [1, numAnchors, 4+numClasses+32]
-                int C = 4 + numClasses + 32;
-                boolean channelFirst = (d1 == C && d1 < d2);
-                int numAnchors = channelFirst ? d2 : d1;
-
-                for (int i = 0; i < numAnchors; i++) {
-                    float cx = channelFirst ? data0[0][i] : data0[i][0];
-                    float cy = channelFirst ? data0[1][i] : data0[i][1];
-                    float w  = channelFirst ? data0[2][i] : data0[i][2];
-                    float h  = channelFirst ? data0[3][i] : data0[i][3];
-
-                    float maxScore = -1.0f;
-                    int maxClass = 0;
-                    for (int c = 0; c < numClasses; c++) {
-                        float score = channelFirst ? data0[4 + c][i] : data0[i][4 + c];
-                        if (score > maxScore) { maxScore = score; maxClass = c; }
-                    }
-                    if (maxScore < scoreThreshold) continue;
-
-                    float bx = cx - w / 2.0f;
-                    float by = cy - h / 2.0f;
-                    float bw = w;
-                    float bh = h;
-
-                    float[] cand = new float[6 + 32];
-                    cand[0] = bx;
-                    cand[1] = by;
-                    cand[2] = bw;
-                    cand[3] = bh;
-                    cand[4] = maxScore;
-                    cand[5] = maxClass;
-                    for (int j = 0; j < 32; j++) {
-                        cand[6 + j] = channelFirst ? data0[4 + numClasses + j][i] : data0[i][4 + numClasses + j];
-                    }
-                    candidates.add(cand);
-                }
-            }
-
-            // NMS (skip for E2E: model already performed NMS, as in Detection/Pose)
-            List<float[]> nmsResults;
-            if (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_SEGMENT_E2E) {
-                nmsResults = candidates;
-            } else {
-                nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
-            }
+            // NMS per the contract's policy (E2E formats pass through)
+            List<Detection> nmsResults = PostProcessors.applyNms(candidates, contractOf(s), (float) nmsThreshold);
 
             if (enableLog) {
                 IJ.log("Inference time: " + inferenceTime + " ms");
@@ -258,16 +188,17 @@ public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
             }
 
             // Post-processing & Output Visualizations
-            outputSegmentationResults(nmsResults, proto, protoH, protoW, targetW, targetH, scale, padLeft, padTop, imgW, imgH, imageTitle, s, inferenceTime);
+            outputSegmentationResults(nmsResults, proto, protoH, protoW, targetW, targetH, tf, imgW, imgH, imageTitle, s, inferenceTime);
 
         } catch (Throwable t) {
             handleInferenceFailure("Segmentation inference failed: ", t);
         }
     }
 
-    private void outputSegmentationResults(List<float[]> results, float[][][] proto, int protoH, int protoW,
-                                            int targetW, int targetH, float scale, float padLeft, float padTop,
+    private void outputSegmentationResults(List<Detection> results, float[][][] proto, int protoH, int protoW,
+                                            int targetW, int targetH, Preprocessor.Transform tf,
                                             int imgW, int imgH, String imageTitle, MyOrtSession s, long inferenceTime) {
+        float scale = tf.scale(), padLeft = tf.padLeft(), padTop = tf.padTop();
 
         ij.plugin.frame.RoiManager rm = null;
         if (showRoiManager) {
@@ -295,23 +226,22 @@ public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
             rt = OrtUtil.getResultsTable(enableRefreshData);
         }
 
-        for (float[] r : results) {
-            float bx = r[0];
-            float by = r[1];
-            float bw = r[2];
-            float bh = r[3];
-            float score = r[4];
-            int classId = (int) r[5];
+        for (Detection r : results) {
+            MaskRef.ProtoMask pm = (MaskRef.ProtoMask) r.mask();
+            float bx = pm.boxX();
+            float by = pm.boxY();
+            float bw = pm.boxW();
+            float bh = pm.boxH();
+            float score = r.score();
+            int classId = r.classId();
 
-            float[] coeffs = new float[32];
-            System.arraycopy(r, 6, coeffs, 0, 32);
+            float[] coeffs = pm.coeffs();
 
-            // Restore box to original image coordinates
-            float[] restored = OrtUtil.restoreBbox(bx, by, bw, bh, scale, padLeft, padTop);
-            float rx = Math.max(0, Math.min(restored[0], imgW));
-            float ry = Math.max(0, Math.min(restored[1], imgH));
-            float rw = Math.max(0, Math.min(restored[2], imgW - rx));
-            float rh = Math.max(0, Math.min(restored[3], imgH - ry));
+            // Box in original image coordinates (restored by the decoder), clipped as before
+            float rx = Math.max(0, Math.min(r.x(), imgW));
+            float ry = Math.max(0, Math.min(r.y(), imgH));
+            float rw = Math.max(0, Math.min(r.width(), imgW - rx));
+            float rh = Math.max(0, Math.min(r.height(), imgH - ry));
             if (rw <= 0 || rh <= 0) continue;
 
             int wLimit = (int) Math.ceil(rw);

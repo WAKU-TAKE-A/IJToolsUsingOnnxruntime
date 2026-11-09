@@ -94,16 +94,23 @@ public final class RfDetrInference {
                     ? ((float[][][][]) out.get("masks").orElseThrow().getValue())[0] : null;
             float[][][] keypoints = s.getModelType() == MyOrtSession.ModelType.RF_DETR_POSE
                     ? ((float[][][][]) out.get("keypoints").orElseThrow().getValue())[0] : null;
-            List<Detection> detections = decode(boxes, logits, keypoints, ip.getWidth(), ip.getHeight(), threshold,
+            List<io.github.wakutakea.ijtoolsusingonnxruntime.Detection> decoded = RfDetrDecoder.decode(
+                    boxes, logits, keypoints, ip.getWidth(), ip.getHeight(), threshold,
                     Integer.parseInt(meta.get("ijtools.rfdetr.num_select")),
                     Integer.parseInt(meta.get("ijtools.rfdetr.background")),
                     keypoints == null ? new int[0] : keypointCounts(meta),
                     keypoints == null ? 0 : Double.parseDouble(meta.get("ijtools.rfdetr.trace_alpha")));
+            List<Detection> detections = new ArrayList<>(decoded.size());
+            for (io.github.wakutakea.ijtoolsusingonnxruntime.Detection d : decoded) detections.add(fromUnified(d));
             return new Prediction(detections, masks, millis);
         }
     }
 
-    private record Candidate(int query, int cls, float score) {}
+    /** Converts the unified Detection back to this class's legacy record (used by Prediction). */
+    static Detection fromUnified(io.github.wakutakea.ijtoolsusingonnxruntime.Detection d) {
+        return new Detection(d.query(), d.classId(), d.score(), d.x(), d.y(),
+                             d.width(), d.height(), d.keypoints());
+    }
 
     /** Optional shared postprocessing, retaining each query's mask and keypoints. */
     public static Prediction applyNms(Prediction prediction, float threshold) {
@@ -114,73 +121,16 @@ public final class RfDetrInference {
 
     static List<Detection> decode(float[][] boxes, float[][] logits, float[][][] keypoints,
             int width, int height, float threshold, int topK, int background, int[] counts, double traceAlpha) {
-        if (!Float.isFinite(threshold) || threshold < 0 || threshold > 1 || topK < 1)
-            throw new IllegalArgumentException("Invalid RF-DETR score threshold/top-K");
-        // Bound memory to topK even for custom models with many queries/classes.
-        Comparator<Candidate> best = Comparator.comparingDouble((Candidate c) -> -c.score)
-                .thenComparingInt(Candidate::query).thenComparingInt(Candidate::cls);
-        PriorityQueue<Candidate> queue = new PriorityQueue<>(best.reversed());
-        for (int q = 0; q < logits.length; q++) {
-            for (int c = 0; c < logits[q].length; c++) {
-                if (c == background || !Float.isFinite(logits[q][c])) continue;
-                Candidate candidate = new Candidate(q, c, sigmoid(logits[q][c]));
-                if (queue.size() < topK) queue.add(candidate);
-                else if (best.compare(candidate, queue.peek()) < 0) { queue.poll(); queue.add(candidate); }
-            }
-        }
-        List<Candidate> selected = new ArrayList<>(queue);
-        selected.sort(best);
-        List<Detection> result = new ArrayList<>();
-        int maxK = Arrays.stream(counts).max().orElse(0);
-        for (Candidate c : selected) {
-            float score = c.score;
-            float[][] kp = null;
-            if (keypoints != null) {
-                if (c.cls >= counts.length || counts[c.cls] == 0) continue;
-                int count = counts[c.cls], offset = c.cls * maxK;
-                kp = new float[count][3];
-                for (int k = 0; k < count; k++) {
-                    float[] raw = keypoints[c.query][offset + k];
-                    kp[k] = new float[]{raw[0] * width, raw[1] * height, sigmoid(raw[2])};
-                }
-                if (traceAlpha > 0) score = fusedScore(score, keypoints[c.query], offset, count, traceAlpha);
-            }
-            if (!(score > threshold)) continue;
-            float[] b = boxes[c.query];
-            if (b.length != 4 || !finite(b) || b[2] <= 0 || b[3] <= 0) continue;
-            float x1 = clamp((b[0] - b[2] / 2) * width, width);
-            float y1 = clamp((b[1] - b[3] / 2) * height, height);
-            float x2 = clamp((b[0] + b[2] / 2) * width, width);
-            float y2 = clamp((b[1] + b[3] / 2) * height, height);
-            if (x2 <= x1 || y2 <= y1) continue;
-            result.add(new Detection(c.query, c.cls, score, x1, y1, x2-x1, y2-y1, kp));
-        }
-        return result;
+        // The implementation lives in RfDetrDecoder (Phase 2); this facade
+        // keeps the legacy record type for existing callers and tests.
+        List<io.github.wakutakea.ijtoolsusingonnxruntime.Detection> decoded = RfDetrDecoder.decode(
+                boxes, logits, keypoints, width, height, threshold, topK, background, counts, traceAlpha);
+        List<Detection> output = new ArrayList<>(decoded.size());
+        for (io.github.wakutakea.ijtoolsusingonnxruntime.Detection d : decoded) output.add(fromUnified(d));
+        return output;
     }
 
-    private static float fusedScore(float score, float[][] kp, int offset, int count, double alpha) {
-        double logNumerator = Double.NEGATIVE_INFINITY, logDenominator = Double.NEGATIVE_INFINITY;
-        for (int k = 0; k < count; k++) {
-            float[] p = kp[offset + k];
-            double a = -2.0 * p[4], b = -2.0 * p[6];
-            double trace = logAdd(logAdd(a, b), 2 * Math.log(Math.max(Math.abs(p[5]), 1e-12)) + a + b);
-            double weight = Math.log(Math.max(sigmoid(p[2]), 1e-12));
-            logNumerator = logAdd(logNumerator, trace + weight);
-            logDenominator = logAdd(logDenominator, weight);
-        }
-        return Math.min(Math.nextDown(1f), sigmoid(Math.log(score) - alpha * (logNumerator - logDenominator)));
-    }
-    private static double logAdd(double a, double b) {
-        if (a == Double.NEGATIVE_INFINITY) return b;
-        double max = Math.max(a, b);
-        return max + Math.log(Math.exp(a - max) + Math.exp(b - max));
-    }
-    static float sigmoid(double x) { return (float) (1.0 / (1.0 + Math.exp(-x))); }
-    private static float clamp(float x, int max) { return Math.max(0, Math.min(max, x)); }
-    private static boolean finite(float[] values) {
-        for (float v : values) if (!Float.isFinite(v)) return false;
-        return true;
-    }
+    static float sigmoid(double x) { return RfDetrDecoder.sigmoid(x); }
 
     /** Sample mask logits with align_corners=false, matching RF-DETR's mask upsampling. */
     public static float maskValue(float[][] mask, int x, int y, int width, int height) {
