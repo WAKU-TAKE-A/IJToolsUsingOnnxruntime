@@ -188,9 +188,12 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
             s.loadClassNamesFromMetadata();
 
-            // Validate if the selected format matches the model's structure/metadata
+            // Validate if the selected format matches the model's structure/metadata.
+            // A mismatch is always a load failure, regardless of model family
+            // (YOLO / RF-DETR) or macro execution: continuing would let the 2nd
+            // plugins interpret the output tensor with the wrong format.
             String warning = s.validateFormat();
-            if (warning != null && (s.isRfDetr() || !IJ.isMacro())) {
+            if (warning != null) {
                 OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - " + warning);
                 s.release();
                 return; // Stop loading if there's a mismatch
