@@ -13,7 +13,7 @@ public final class RfDetrInference {
                             float width, float height, float[][] keypoints) {}
     public record Prediction(List<Detection> detections, float[][][] masks, long inferenceMillis) {}
 
-    public static String validate(MyOrtSession s) throws OrtException {
+    public static String validate(OrtModel s) throws OrtException {
         Map<String, String> meta = s.getMetadata().getCustomMetadata();
         if (!"1".equals(meta.get("ijtools.rfdetr.contract"))) {
             return "RF-DETR requires an export prepared by RF-DETR/export_rfdetr.py (contract metadata missing).";
@@ -80,7 +80,7 @@ public final class RfDetrInference {
         return Preprocessor.apply(ip, PreprocessSpec.RFDETR_STRETCH, width, height).tensor();
     }
 
-    public static Prediction predict(MyOrtSession s, ImageProcessor ip, float threshold) throws OrtException {
+    public static Prediction predict(OrtModel s, ImageProcessor ip, float threshold) throws OrtException {
         String error = validate(s);
         if (error != null) throw new IllegalArgumentException(error);
         float[] input = preprocess(ip, s.getInputWidth(), s.getInputHeight());

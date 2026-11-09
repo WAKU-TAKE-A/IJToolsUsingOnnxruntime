@@ -25,7 +25,7 @@ public final class RfDetrSmoke {
             Files.createDirectories(output);
             ImagePlus image = IJ.openImage(root.resolve("samples").resolve(item[1]).toString());
             if (image == null) throw new AssertionError("Cannot open " + item[1]);
-            MyOrtSession session = new MyOrtSession();
+            OrtModel session = new OrtModel();
             try {
                 session.load(root.resolve(item[0]).resolve("model.onnx").toString(),
                         ModelContract.valueOf(item[2]));

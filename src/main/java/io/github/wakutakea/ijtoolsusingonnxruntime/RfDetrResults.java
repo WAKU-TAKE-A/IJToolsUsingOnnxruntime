@@ -17,7 +17,7 @@ import java.util.List;
 public final class RfDetrResults {
     private RfDetrResults() {}
 
-    public static void run(MyOrtSession session, ImageProcessor ip, ImagePlus image, RenderOptions o,
+    public static void run(OrtModel session, ImageProcessor ip, ImagePlus image, RenderOptions o,
             double scoreThreshold, double nmsThreshold) {
         try {
             RfDetrInference.Prediction prediction = RfDetrInference.predict(session, ip, (float) scoreThreshold);
@@ -39,7 +39,7 @@ public final class RfDetrResults {
      * render call (kept for existing callers/tests); delegates to
      * {@link ResultsRenderer#renderRfDetr}.
      */
-    public static void render(RfDetrInference.Prediction prediction, MyOrtSession session, ImagePlus image,
+    public static void render(RfDetrInference.Prediction prediction, OrtModel session, ImagePlus image,
             int slot, double maskThreshold, double keypointThreshold, boolean table, boolean manager,
             boolean showOverlay, int alpha, boolean exportMask, boolean refresh) {
         RenderOptions o = RenderOptions.builder(slot)
