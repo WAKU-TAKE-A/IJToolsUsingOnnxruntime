@@ -5,8 +5,6 @@ import ij.IJ;
 import ij.gui.GenericDialog;
 import ij.process.ImageProcessor;
 import ai.onnxruntime.*;
-import java.awt.Color;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -92,8 +90,9 @@ public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
         if (s == null) return;
 
         if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_POSE) {
-            RfDetrResults.run(s, ip, imp, slotChoice, scoreThreshold, nmsThreshold, 0.5, kptThreshold,
-                    false, showRoiManager, false, 80, false, enableRefreshData, enableLog);
+            RfDetrResults.run(s, ip, imp,
+                    renderOptions(0.5, kptThreshold, false, showRoiManager, false, 80, false),
+                    scoreThreshold, nmsThreshold);
             return;
         }
 
@@ -103,18 +102,12 @@ public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
             return;
         }
 
-        int targetW = s.getInputWidth();
-        int targetH = s.getInputHeight();
         int imgW    = ip.getWidth();
         int imgH    = ip.getHeight();
-        String imageTitle = imp.getShortTitle();
 
-        // 1. Preprocess
-        float[] inputData = preprocess(s, ip);
-        float[] lbParams  = letterboxParams(s, ip);
-        float scale   = lbParams[0];
-        float padLeft = lbParams[1];
-        float padTop  = lbParams[2];
+        // 1. Preprocess (contract-driven; tensor + coordinate transform in one pass)
+        Preprocessor.Result prep = prepareInput(s, ip);
+        float[] inputData = prep.tensor();
 
         // 2. Inference
         long timer = startTimer();
@@ -126,20 +119,11 @@ public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
             float[][][] raw = (float[][][]) outTensor.getValue();
             float[][] data = raw[0];
 
-            List<float[]> candidates = new ArrayList<>();
-            if (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_POSE_E2E) {
-                parsePose_E2E(data, imgW, imgH, (float) scoreThreshold, scale, padLeft, padTop, candidates);
-            } else {
-                parsePose(data, imgW, imgH, (float) scoreThreshold, scale, padLeft, padTop, targetW, targetH, candidates);
-            }
+            List<Detection> candidates = YoloDecoder.decodePose(
+                    data, s.getCoordFormat(), imgW, imgH, (float) scoreThreshold, prep.transform());
 
-            // 4. Per-class NMS (usually only 1 class 'person' for pose, but generic)
-            List<float[]> results;
-            if (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_POSE_E2E) {
-                results = candidates;
-            } else {
-                results = Nms.classAgnostic(candidates, (float) nmsThreshold);
-            }
+            // 4. NMS per the contract's policy (class-agnostic; E2E passes through)
+            List<Detection> results = PostProcessors.applyNms(candidates, contractOf(s), (float) nmsThreshold);
 
             if (enableLog) {
                 IJ.log("Inference time: " + inferenceTime + " ms");
@@ -148,125 +132,11 @@ public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
             }
 
             // 5. Output
-            outputResults(results, s, imageTitle);
+            ResultsRenderer.renderPose(results, s, imp, inferenceTime,
+                    renderOptions(0.5, kptThreshold, true, showRoiManager, false, 80, false));
 
         } catch (Throwable t) {
             handleInferenceFailure("Pose inference failed ", t);
         }
     }
-
-    private void parsePose(float[][] data, int imgW, int imgH, float scoreTh,
-                           float scale, float padLeft, float padTop,
-                           int inputW, int inputH, List<float[]> out) {
-        int d1 = data.length;
-        int d2 = data[0].length;
-        int C  = data.length;
-
-        boolean channelFirst = (d1 > d2); // Simplified check for pose [C, N]
-        int numAnchors = channelFirst ? d2 : d1;
-        int numKpts = ( (channelFirst ? d1 : d2) - 5 ) / 3;
-
-        for (int i = 0; i < numAnchors; i++) {
-            float cx    = channelFirst ? data[0][i] : data[i][0];
-            float cy    = channelFirst ? data[1][i] : data[i][1];
-            float w     = channelFirst ? data[2][i] : data[i][2];
-            float h     = channelFirst ? data[3][i] : data[i][3];
-            float score = channelFirst ? data[4][i] : data[i][4];
-
-            if (score < scoreTh) continue;
-
-            float bw = w;
-            float bh = h;
-            float bx = cx - bw / 2;
-            float by = cy - bh / 2;
-
-            float[] restored = OrtUtil.restoreBbox(bx, by, bw, bh, scale, padLeft, padTop);
-
-            float[] res = new float[5 + numKpts * 3];
-            res[0] = Math.max(0, Math.min(restored[0], imgW));
-            res[1] = Math.max(0, Math.min(restored[1], imgH));
-            res[2] = Math.max(0, Math.min(restored[2], imgW - res[0]));
-            res[3] = Math.max(0, Math.min(restored[3], imgH - res[1]));
-            res[4] = score;
-
-            for (int k = 0; k < numKpts; k++) {
-                float kx = channelFirst ? data[5 + k*3][i]   : data[i][5 + k*3];
-                float ky = channelFirst ? data[5 + k*3 + 1][i] : data[i][5 + k*3 + 1];
-                float ks = channelFirst ? data[5 + k*3 + 2][i] : data[i][5 + k*3 + 2];
-
-                float[] rk = OrtUtil.restorePoint(kx, ky, scale, padLeft, padTop);
-                res[5 + k*3]     = rk[0];
-                res[5 + k*3 + 1] = rk[1];
-                res[5 + k*3 + 2] = ks;
-            }
-            out.add(res);
-        }
-    }
-
-    private void parsePose_E2E(float[][] data, int imgW, int imgH, float scoreTh,
-                               float scale, float padLeft, float padTop,
-                               List<float[]> out) {
-        int numDetections = data.length;
-        int numKpts = (data[0].length - 6) / 3;
-
-        for (int i = 0; i < numDetections; i++) {
-            float x1      = data[i][0];
-            float y1      = data[i][1];
-            float x2      = data[i][2];
-            float y2      = data[i][3];
-            float score   = data[i][4];
-
-            if (score < scoreTh) continue;
-
-            float bw = x2 - x1;
-            float bh = y2 - y1;
-            float[] restored = OrtUtil.restoreBbox(x1, y1, bw, bh, scale, padLeft, padTop);
-
-            float[] res = new float[5 + numKpts * 3];
-            res[0] = Math.max(0, Math.min(restored[0], imgW));
-            res[1] = Math.max(0, Math.min(restored[1], imgH));
-            res[2] = Math.max(0, Math.min(restored[2], imgW - res[0]));
-            res[3] = Math.max(0, Math.min(restored[3], imgH - res[1]));
-            res[4] = score;
-
-            for (int k = 0; k < numKpts; k++) {
-                float kx = data[i][6 + k*3];
-                float ky = data[i][6 + k*3 + 1];
-                float ks = data[i][6 + k*3 + 2];
-
-                float[] rk = OrtUtil.restorePoint(kx, ky, scale, padLeft, padTop);
-                res[5 + k*3]     = rk[0];
-                res[5 + k*3 + 1] = rk[1];
-                res[5 + k*3 + 2] = ks;
-            }
-            out.add(res);
-        }
-    }
-
-    private void outputResults(List<float[]> results, MyOrtSession s, String imageTitle) {
-        if (showRoiManager) {
-            ij.plugin.frame.RoiManager rm = OrtUtil.getRoiManager(enableRefreshData, false);
-            for (float[] r : results) {
-                ij.gui.Roi roi = new ij.gui.Roi(r[0], r[1], r[2], r[3]);
-                roi.setName("person (" + String.format("%.2f", r[4]) + ")");
-                roi.setStrokeColor(Color.YELLOW);
-                rm.addRoi(roi);
-
-                int numKpts = (r.length - 5) / 3;
-                for (int k = 0; k < numKpts; k++) {
-                    float kx = r[5 + k*3];
-                    float ky = r[5 + k*3 + 1];
-                    float ks = r[5 + k*3 + 2];
-                    if (ks > kptThreshold) {
-                        ij.gui.PointRoi p = new ij.gui.PointRoi(kx, ky);
-                        p.setName("kp" + k);
-                        rm.addRoi(p);
-                    }
-                }
-            }
-        }
-    }
-
-    private static java.awt.Color[] COLORS = { java.awt.Color.RED, java.awt.Color.GREEN, java.awt.Color.BLUE, java.awt.Color.YELLOW, java.awt.Color.CYAN, java.awt.Color.MAGENTA };
-    private java.awt.Color getColor(int i) { return COLORS[i % COLORS.length]; }
 }
