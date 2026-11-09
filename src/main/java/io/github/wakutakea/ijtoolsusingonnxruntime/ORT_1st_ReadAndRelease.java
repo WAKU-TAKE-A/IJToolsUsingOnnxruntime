@@ -60,7 +60,6 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
     @Override
     public int setup(String arg, ImagePlus imp) {
-        System.out.println("DEBUG: 1st Read and Release setup() called with arg: " + arg);
         return NO_IMAGE_REQUIRED;
     }
 
@@ -153,10 +152,8 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
             MyOrtSession.ModelType   type  = resolveModelType(formatChoice);
             MyOrtSession.CoordFormat coord = resolveCoordFormat(formatChoice);
 
-            System.out.println("DEBUG: Attempting to load model: " + modelPath);
             MyOrtSession s = new MyOrtSession();
             s.load(modelPath, type, coord);
-            System.out.println("DEBUG: Model loaded: " + s.getModelName() + " (" + type + ")");
 
             // Handle dynamic input shape
             if (s.getInputWidth() <= 0 || s.getInputHeight() <= 0) {

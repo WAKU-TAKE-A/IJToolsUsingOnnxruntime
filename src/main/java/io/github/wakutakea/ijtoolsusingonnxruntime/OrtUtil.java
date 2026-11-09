@@ -136,7 +136,6 @@ public class OrtUtil {
         int[] pixels    = (int[]) padded.getPixels();
         int   planeSize = targetH * targetW;
         float[] nchw    = new float[3 * planeSize];
-        float sum = 0, max = -1.0f, min = Float.MAX_VALUE;
         for (int i = 0; i < planeSize; i++) {
             int px = pixels[i];
             float r = ((px >> 16) & 0xFF);
@@ -157,14 +156,7 @@ public class OrtUtil {
                 nchw[planeSize   + i] = g;
                 nchw[planeSize*2 + i] = b;
             }
-            
-            float pixelSum = r + g + b;
-            sum += pixelSum;
-            max = Math.max(max, Math.max(r, Math.max(g, b)));
-            min = Math.min(min, Math.min(r, Math.min(g, b)));
         }
-        System.out.println("DEBUG: Preprocess done. Shape: [1, 3, " + targetW + ", " + targetH + "], isYolox: " + isYolox);
-        System.out.println("DEBUG: Input Range: [" + min + ", " + max + "], Mean: " + (sum / (3 * planeSize)));
 
         return nchw;
     }

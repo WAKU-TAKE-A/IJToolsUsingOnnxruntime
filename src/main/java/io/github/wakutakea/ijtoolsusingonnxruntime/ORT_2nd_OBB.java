@@ -125,20 +125,6 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
             int d2 = data[0].length;
             int numClasses = s.getNumClasses();
 
-            if (enableLog) {
-                IJ.log("[OBB v2.0] Format: " + s.getCoordFormat()
-                    + "  tensor: [" + d1 + ", " + d2 + "]"
-                    + "  numClasses: " + numClasses);
-                // Print first 3 rows of raw output for diagnostics
-                int dbgRows = Math.min(d1, 3);
-                int dbgCols = Math.min(d2, 8);
-                for (int r = 0; r < dbgRows; r++) {
-                    StringBuilder sb = new StringBuilder("  row[").append(r).append("]: ");
-                    for (int c = 0; c < dbgCols; c++) sb.append(String.format("%.3f ", data[r][c]));
-                    IJ.log(sb.toString());
-                }
-            }
-
             // Candidates float[11] = [bx, by, env_w, env_h, score, classId, angle, cx, cy, w, h]
             // We compute the axis-aligned envelope (bx,by,env_w,env_h) strictly for the IoU NMS approximation.
             List<float[]> candidates = new ArrayList<>();
@@ -174,8 +160,6 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
                 boolean channelFirst = (d1 == C && d1 < d2);
                 int numAnchors = channelFirst ? d2 : d1;
 
-                float overallMaxScore = -1.0f;
-
                 for (int i = 0; i < numAnchors; i++) {
                     float cx = channelFirst ? data[0][i] : data[i][0];
                     float cy = channelFirst ? data[1][i] : data[i][1];
@@ -187,10 +171,6 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
                     for (int c = 0; c < numClasses; c++) {
                         float sc = channelFirst ? data[4 + c][i] : data[i][4 + c];
                         if (sc > maxScore) { maxScore = sc; maxClass = c; }
-                    }
-
-                    if (maxScore > overallMaxScore) {
-                        overallMaxScore = maxScore;
                     }
 
                     if (maxScore < scoreThreshold) continue;
@@ -206,10 +186,6 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
                     float by = cy - envH / 2.0f;
 
                     candidates.add(new float[]{bx, by, envW, envH, maxScore, maxClass, angle, cx, cy, w, h});
-                }
-
-                if (enableLog) {
-                    IJ.log("  Max score across all anchors: " + overallMaxScore);
                 }
             }
 
