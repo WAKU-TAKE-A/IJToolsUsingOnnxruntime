@@ -225,8 +225,14 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
                 }
             }
 
-            // 3. NMS (axis-aligned IoU approximation is sufficient for moderate angles)
-            List<float[]> nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
+            // 3. NMS (axis-aligned IoU approximation is sufficient for moderate angles;
+            //    skip for E2E: model already performed NMS, as in Detection/Pose)
+            List<float[]> nmsResults;
+            if (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_OBB_E2E) {
+                nmsResults = candidates;
+            } else {
+                nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
+            }
 
             if (enableLog) {
                 IJ.log("Inference time: " + inferenceTime + " ms");
