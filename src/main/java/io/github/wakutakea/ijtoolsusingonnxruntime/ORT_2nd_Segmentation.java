@@ -259,8 +259,13 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
                 }
             }
 
-            // NMS
-            List<float[]> nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
+            // NMS (skip for E2E: model already performed NMS, as in Detection/Pose)
+            List<float[]> nmsResults;
+            if (s.getCoordFormat() == MyOrtSession.CoordFormat.YOLO_SEGMENT_E2E) {
+                nmsResults = candidates;
+            } else {
+                nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
+            }
 
             if (enableLog) {
                 IJ.log("Inference time: " + inferenceTime + " ms");
