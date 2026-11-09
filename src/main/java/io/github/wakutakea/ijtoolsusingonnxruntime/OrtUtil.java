@@ -6,9 +6,7 @@ package io.github.wakutakea.ijtoolsusingonnxruntime;
 import ij.WindowManager;
 import ij.measure.ResultsTable;
 import ij.plugin.frame.RoiManager;
-import ij.process.ColorProcessor;
 import ij.process.ImageProcessor;
-import ij.process.Blitter;
 import ai.onnxruntime.OrtEnvironment;
 import ai.onnxruntime.OrtException;
 import java.awt.Color;
@@ -107,58 +105,10 @@ public class OrtUtil {
      * @return float array of length 3 * targetH * targetW in NCHW order (R, G, B planes)
      */
     public static float[] preprocess(ImageProcessor ip, int targetW, int targetH, boolean isYolox) {
-        // Ensure ColorProcessor
-        ColorProcessor cp = (ip instanceof ColorProcessor)
-                ? (ColorProcessor) ip
-                : (ColorProcessor) ip.convertToRGB();
-
-        int srcW = cp.getWidth();
-        int srcH = cp.getHeight();
-
-        // Compute letterbox scale and padding
-        double scale   = Math.min((double) targetW / srcW, (double) targetH / srcH);
-        int scaledW    = (int) Math.round(srcW * scale);
-        int scaledH    = (int) Math.round(srcH * scale);
-        int padLeft    = (targetW - scaledW) / 2;
-        int padTop     = (targetH - scaledH) / 2;
-
-        // Resize
-        cp.setInterpolationMethod(ImageProcessor.BILINEAR);
-        ImageProcessor resized = cp.resize(scaledW, scaledH);
-
-        // Create padded canvas
-        ColorProcessor padded = new ColorProcessor(targetW, targetH);
-        padded.setColor(new Color(114, 114, 114));
-        padded.fill();
-        padded.copyBits(resized, padLeft, padTop, Blitter.COPY);
-
-        // ARGB int[] -> NCHW float[]
-        int[] pixels    = (int[]) padded.getPixels();
-        int   planeSize = targetH * targetW;
-        float[] nchw    = new float[3 * planeSize];
-        for (int i = 0; i < planeSize; i++) {
-            int px = pixels[i];
-            float r = ((px >> 16) & 0xFF);
-            float g = ((px >>  8) & 0xFF);
-            float b = ( px        & 0xFF);
-
-            if (isYolox) {
-                // YOLOX: BGR order, [0, 255] range
-                nchw[              i] = b;
-                nchw[planeSize   + i] = g;
-                nchw[planeSize*2 + i] = r;
-            } else {
-                // YOLO: RGB order, [0.0, 1.0] range
-                r /= 255.0f;
-                g /= 255.0f;
-                b /= 255.0f;
-                nchw[              i] = r;
-                nchw[planeSize   + i] = g;
-                nchw[planeSize*2 + i] = b;
-            }
-        }
-
-        return nchw;
+        // The implementation lives in Preprocessor (Phase 2); this method
+        // is kept as a delegation for existing callers.
+        PreprocessSpec spec = isYolox ? PreprocessSpec.YOLOX_LETTERBOX : PreprocessSpec.YOLO_LETTERBOX;
+        return Preprocessor.apply(ip, spec, targetW, targetH).tensor();
     }
 
     /**

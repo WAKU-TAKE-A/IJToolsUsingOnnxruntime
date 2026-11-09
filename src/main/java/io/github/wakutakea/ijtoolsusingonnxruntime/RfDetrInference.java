@@ -75,32 +75,9 @@ public final class RfDetrInference {
 
     /** Half-pixel bilinear interpolation without antialiasing, on float RGB values. */
     public static float[] preprocess(ImageProcessor ip, int width, int height) {
-        if (width <= 0 || height <= 0) throw new IllegalArgumentException("Invalid input size");
-        int[] rgb = (int[]) ip.convertToRGB().getPixels();
-        int srcW = ip.getWidth(), srcH = ip.getHeight(), plane = width * height;
-        float[] result = new float[3 * plane];
-        float[] mean = {0.485f, 0.456f, 0.406f}, std = {0.229f, 0.224f, 0.225f};
-        float scaleX = (float) srcW / width, scaleY = (float) srcH / height;
-        for (int y = 0; y < height; y++) {
-            float sy = Math.max(0, (y + 0.5f) * scaleY - 0.5f);
-            int y0 = (int) sy, y1 = Math.min(y0 + 1, srcH - 1);
-            float fy = sy - y0;
-            for (int x = 0; x < width; x++) {
-                float sx = Math.max(0, (x + 0.5f) * scaleX - 0.5f);
-                int x0 = (int) sx, x1 = Math.min(x0 + 1, srcW - 1);
-                float fx = sx - x0;
-                for (int c = 0; c < 3; c++) {
-                    int shift = 16 - c * 8;
-                    float a = ((rgb[y0 * srcW + x0] >> shift) & 255) / 255f;
-                    float b = ((rgb[y0 * srcW + x1] >> shift) & 255) / 255f;
-                    float d = ((rgb[y1 * srcW + x0] >> shift) & 255) / 255f;
-                    float e = ((rgb[y1 * srcW + x1] >> shift) & 255) / 255f;
-                    float v = (a * (1 - fx) + b * fx) * (1 - fy) + (d * (1 - fx) + e * fx) * fy;
-                    result[c * plane + y * width + x] = (v - mean[c]) / std[c];
-                }
-            }
-        }
-        return result;
+        // The implementation lives in Preprocessor (Phase 2, STRETCH
+        // variant of the RF-DETR spec); this method delegates to it.
+        return Preprocessor.apply(ip, PreprocessSpec.RFDETR_STRETCH, width, height).tensor();
     }
 
     public static Prediction predict(MyOrtSession s, ImageProcessor ip, float threshold) throws OrtException {

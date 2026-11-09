@@ -152,15 +152,31 @@ public abstract class AbstractOrt2ndPlugin implements ExtendedPlugInFilter, Dial
         return s.getModelType() == MyOrtSession.ModelType.YOLOX;
     }
 
+    /** The model contract of a loaded session (never null for sessions loaded via 1st). */
+    protected static ModelContract contractOf(MyOrtSession s) {
+        return ModelContract.of(s.getModelType(), s.getCoordFormat());
+    }
+
+    /**
+     * Runs the session contract's preprocessing once and returns both
+     * the input tensor and the coordinate transform decoders need.
+     */
+    protected static Preprocessor.Result prepareInput(MyOrtSession s, ImageProcessor ip) {
+        return Preprocessor.apply(ip, contractOf(s).preprocess(),
+                                  s.getInputWidth(), s.getInputHeight());
+    }
+
     /** YOLO-family letterbox preprocessing with the session's input size. */
     protected static float[] preprocess(MyOrtSession s, ImageProcessor ip) {
-        return OrtUtil.preprocess(ip, s.getInputWidth(), s.getInputHeight(), isYolox(s));
+        return prepareInput(s, ip).tensor();
     }
 
     /** Letterbox parameters [scale, padLeft, padTop] for the session's input size. */
     protected static float[] letterboxParams(MyOrtSession s, ImageProcessor ip) {
-        return OrtUtil.calcLetterboxParams(ip.getWidth(), ip.getHeight(),
-                                           s.getInputWidth(), s.getInputHeight());
+        Preprocessor.Transform t = Preprocessor.transformFor(
+                contractOf(s).preprocess(), ip.getWidth(), ip.getHeight(),
+                s.getInputWidth(), s.getInputHeight());
+        return new float[]{t.scale(), t.padLeft(), t.padTop()};
     }
 
     /** Starts an inference timer. Timing is unified on nanoTime in all 2nd plugins. */
