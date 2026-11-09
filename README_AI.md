@@ -68,8 +68,9 @@ Python は事前のモデル準備と検証を担当し、ImageJ 内の推論経
 | 共通 NMS、検出データの保持 | [NmsTest.java](src/test/java/io/github/wakutakea/ijtoolsusingonnxruntime/NmsTest.java) |
 | RF-DETR の前処理・解析・補間 | [RfDetrInferenceTest.java](src/test/java/io/github/wakutakea/ijtoolsusingonnxruntime/RfDetrInferenceTest.java) |
 | 実モデル推論、描画、テーブル、NMS の接続 | [RfDetrSmoke.java](src/test/java/io/github/wakutakea/ijtoolsusingonnxruntime/RfDetrSmoke.java) |
+| YOLO 検出の実モデル推論とテーブル接続 | [YoloSmoke.java](src/test/java/io/github/wakutakea/ijtoolsusingonnxruntime/YoloSmoke.java) |
 | モデル読み込みと ImageJ コマンド・ROI Manager | [test_rfdetr.ijm](test/test_rfdetr.ijm) |
-| Java 実行と公式 Python 処理の比較をまとめて実行 | [verify_rfdetr.py](RF-DETR/verify_rfdetr.py) |
+| Java 実行と公式 Python 処理の比較をまとめて実行 | [verify_rfdetr.py](RF-DETR/verify_rfdetr.py)、[verify_yolo.py](yolo/verify_yolo.py) |
 
 `RfDetrSmoke` は `verify_rfdetr.py` から起動する実モデル用ハーネスで、JUnit の自動実行対象ではない。
 Python 比較が見るのは NMS 前、追加 NMS の確認は Java ハーネスとマクロが担当する。

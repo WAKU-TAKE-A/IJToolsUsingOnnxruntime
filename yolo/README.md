@@ -33,6 +33,7 @@ export 仕様を変えるときは、固定版数とこの文書を一緒に更�
 | `download_and_convert.py` | モデル名を1引数。省略時 `yolov8n-seg`。`--opset`、`--end2end` 指定可 | スクリプト隣の `models/` に `.pt`、`.onnx`、クラス名 `.txt`、`<モデル>.onnx.manifest.json` |
 | `convert.py` | `<model_path> [classes_file]`、旧変換とクラス絞り込み | Ultralytics が返す場所に ONNX。絞り込み時はその ONNX を上書き |
 | `inspect_onnx.py` | ONNX の入力・出力名、形状、要素型の確認 | コンソールのみ。モデルは変更しない |
+| `verify_yolo.py` | Java ハーネス（YoloSmoke）と Python リファレンスの NMS 前比較（検出の標準形式のみ） | `models/verification/` に `java.log`、`report.json`、ハーネス出力 |
 | `extract_names.py` | ONNX の `names` メタデータを抽出 | ONNX と同じ場所・同じ stem の `.txt` を UTF-8 で作成・上書き |
 
 `download_and_convert.py` は実行時に `yolo/models` へカレントディレクトリを変更します。
