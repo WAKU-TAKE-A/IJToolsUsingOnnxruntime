@@ -89,7 +89,7 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = requireLoadedSession();
+        OrtModel s = requireLoadedSession();
         if (s == null) return;
         if (contractOf(s).task() != ModelContract.Task.OBB
                 || contractOf(s).family() != ModelContract.Family.YOLO) {

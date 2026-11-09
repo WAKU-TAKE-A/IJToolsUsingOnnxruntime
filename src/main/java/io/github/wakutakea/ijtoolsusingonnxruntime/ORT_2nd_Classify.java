@@ -69,7 +69,7 @@ public class ORT_2nd_Classify extends AbstractOrt2ndPlugin {
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = requireLoadedSession();
+        OrtModel s = requireLoadedSession();
         if (s == null) return;
 
         // Verify if the model is suitable for Classification

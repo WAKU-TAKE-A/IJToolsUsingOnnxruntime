@@ -21,8 +21,8 @@ import java.util.Map;
  * format validation ({@link #validate}) and the class-count estimation
  * ({@link #resolveNumClasses}) for its formats. Adding a format is:
  * one enum line here, one branch in the matching decoder, and a test.
- * (Phase 3: this enum replaced the former MyOrtSession.ModelType /
- * CoordFormat pair; a loaded model now carries exactly one contract.)
+ * (Phase 3: this enum replaced the former ModelType / CoordFormat
+ * pair; a loaded model now carries exactly one contract.)
  */
 public enum ModelContract {
 
@@ -109,7 +109,7 @@ public enum ModelContract {
      * @param model the loaded model (its session must be open)
      * @return a warning message if a mismatch is found, otherwise null
      */
-    public String validate(MyOrtSession model) throws OrtException {
+    public String validate(OrtModel model) throws OrtException {
         if (family == Family.RF_DETR) {
             // Strict contract-metadata validation; never shape guessing.
             return RfDetrInference.validate(model);
@@ -187,9 +187,9 @@ public enum ModelContract {
      * using the rule of this contract. The returned basis string states
      * the rule and the shape it was applied to, so callers can log why
      * the count is what it is. (A bundled manifest, when present, takes
-     * precedence over this estimation; see {@code MyOrtSession.load}.)
+     * precedence over this estimation; see {@code OrtModel.load}.)
      */
-    public NumClasses resolveNumClasses(MyOrtSession model) throws OrtException {
+    public NumClasses resolveNumClasses(OrtModel model) throws OrtException {
         Map<String, NodeInfo> outMap = model.getOutputInfo();
         if (outMap.isEmpty()) return new NumClasses(0, "model has no outputs");
         NodeInfo ni = outMap.values().iterator().next();

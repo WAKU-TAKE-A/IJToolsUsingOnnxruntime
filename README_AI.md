@@ -22,18 +22,18 @@ Python は事前のモデル準備と検証を担当し、ImageJ 内の推論経
 **モデルの準備と読み込み**
 
 - RF-DETR：[export_rfdetr.py](RF-DETR/export_rfdetr.py) が ONNX と契約メタデータを生成する。
-  受け手は `MyOrtSession.validateFormat()` → `RfDetrInference.validate()`。
+  受け手は `OrtModel.validate()` → `ModelContract.validate()` → `RfDetrInference.validate()`。
 - YOLO：[download_and_convert.py](yolo/download_and_convert.py) または [convert.py](yolo/convert.py) が ONNX を生成する。
-  受け手は `MyOrtSession` の形状・クラス数・クラス名の解釈と、各タスクのパーサー。
+  受け手は `ModelContract` の検証・クラス数推定、`OrtModel` のクラス名の解釈と、各タスクのデコーダ。
 - ImageJ メニューの入口は [plugins.config](src/main/resources/plugins.config)。
-  読み込み操作は `ORT_1st_ReadAndRelease`、実セッションは `MyOrtSession`、共有スロットは `OrtUtil` が持つ。
+  読み込み操作は `ORT_1st_ReadAndRelease`、読み込み済みモデルは `OrtModel`、共有スロットは `OrtUtil` が持つ。
 
 **推論と表示**
 
-- YOLO 系：`ORT_2nd_* .run()` → `OrtUtil` の前処理 → `MyOrtSession.runInference()`
+- YOLO 系：`ORT_2nd_* .run()` → `OrtUtil` の前処理 → `OrtModel.runInference()`
   → 同じタスククラス内の解析・NMS 呼び出し・結果出力。
 - RF-DETR：`ORT_2nd_Detection / Segmentation / Pose` の RF-DETR 分岐
-  → `RfDetrResults.run()` → `RfDetrInference.predict()` → `MyOrtSession.runInference()`。
+  → `RfDetrResults.run()` → `RfDetrInference.predict()` → `OrtModel.runInference()`。
   その後 `RfDetrInference.applyNms()` → `Nms` → `RfDetrResults.render()` へ進む。
 
 ## 変更・不具合調査の入口
@@ -42,12 +42,12 @@ Python は事前のモデル準備と検証を担当し、ImageJ 内の推論経
 
 | 目的・症状 | 最初に読む場所 | 一緒に追う場所 |
 |---|---|---|
-| モデルの読み込み失敗、スロット管理 | `ORT_1st_ReadAndRelease` の `readModel()`、`MyOrtSession.load()` | `OrtUtil` のスロット操作、`validateFormat()` |
-| モデル形式やタスクを追加 | `MyOrtSession.ModelType / CoordFormat` | ローダーの `FORMAT_LABELS` と `resolve*()`、該当 `ORT_2nd_*`。新メニューなら `plugins.config` |
-| RF-DETR の export、メタデータ不整合 | `export_rfdetr.py` の `export_one()` | `RfDetrInference.validate()`、`MyOrtSession.resolveNumClasses()`。生成側と受け側を対で読む |
+| モデルの読み込み失敗、スロット管理 | `ORT_1st_ReadAndRelease` の `readModel()`、`OrtModel.load()` | `OrtUtil` のスロット操作、`ModelContract.validate()` |
+| モデル形式やタスクを追加 | `ModelContract` に1行追加（宣言順＝形式インデックス、変更禁止） | 該当デコーダの分岐と `DecoderTest`。新メニューなら `plugins.config` |
+| RF-DETR の export、メタデータ不整合 | `export_rfdetr.py` の `export_one()` | `RfDetrInference.validate()`、`ModelContract.resolveNumClasses()`。生成側と受け側を対で読む |
 | YOLO の取得先、変換条件、ラベル抽出 | `yolo/` の該当スクリプト | [YOLO README](yolo/README.md) のスクリプト別の挙動と制約 |
 | 推論への入力値・座標が違う | YOLO 系は `OrtUtil.preprocess()`、RF-DETR は `RfDetrInference.preprocess()` | 座標復元、各パーサー、`RfDetrInferenceTest` |
-| ラベル・クラス数がおかしい | `MyOrtSession.resolveNumClasses()`、`loadClassNamesFromMetadata()` | RF-DETR は `export_one()` のスロット対応と `decode()`、YOLO は該当パーサー |
+| ラベル・クラス数がおかしい | `ModelContract.resolveNumClasses()`、`OrtModel.loadClassNamesFromMetadata()` | RF-DETR は `export_one()` のスロット対応と `decode()`、YOLO は該当デコーダ。同梱 manifest（`ModelManifest`）がある場合は形状推定より manifest が優先される |
 | 重複した枠や NMS 閾値の問題 | `Nms.suppress()` と呼び出し元 | `RfDetrResults.run()`、各 `ORT_2nd_*` の通常 / E2E 分岐、`NmsTest` |
 | マスクやキーポイントの対応が崩れる | RF-DETR は `Detection.query`、`decode()`、`applyNms()` | `RfDetrResults.render()`。YOLO は該当タスククラス内の解析・出力 |
 | テーブル・ROI・Overlay の問題 | RF-DETR は `RfDetrResults.render()`、YOLO は各 `output*()` | `OrtUtil` の結果管理、`enableRefreshData`、マクロ実行時の分岐 |

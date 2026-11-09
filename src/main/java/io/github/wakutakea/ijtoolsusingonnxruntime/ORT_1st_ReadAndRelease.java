@@ -93,7 +93,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
                 return DONE;
             }
         } else if (actionChoice == 1) { // release_model
-            MyOrtSession s = OrtUtil.getSlot(slotChoice);
+            OrtModel s = OrtUtil.getSlot(slotChoice);
             if (s == null || !s.isLoaded()) {
                 OrtUtil.logError(this.getClass().getSimpleName(), "Slot " + slotChoice + " is empty.");
                 return DONE;
@@ -144,12 +144,12 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
     private void readModel() {
         try {
-            MyOrtSession existing = OrtUtil.getSlot(slotChoice);
+            OrtModel existing = OrtUtil.getSlot(slotChoice);
             if (existing != null && existing.isLoaded()) {
                 existing.release();
             }
 
-            MyOrtSession s = new MyOrtSession();
+            OrtModel s = new OrtModel();
             s.load(modelPath, ModelContract.fromIndex(formatChoice));
 
             // Handle dynamic input shape
@@ -198,7 +198,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
     }
 
     private void releaseModel() {
-        MyOrtSession s = OrtUtil.getSlot(slotChoice);
+        OrtModel s = OrtUtil.getSlot(slotChoice);
         if (s != null) {
             String name = s.getModelName();
             s.release();
@@ -210,7 +210,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
     private void releaseAll() {
         for (int i = 0; i < OrtUtil.MAX_SLOTS; i++) {
-            MyOrtSession s = OrtUtil.getSlot(i);
+            OrtModel s = OrtUtil.getSlot(i);
             if (s != null && s.isLoaded()) {
                 s.release();
                 OrtUtil.setSlot(i, null);
@@ -220,7 +220,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
         IJ.showStatus("All slots released.");
     }
 
-    private void logModelLoaded(MyOrtSession s) {
+    private void logModelLoaded(OrtModel s) {
         try {
             StringBuilder sb = new StringBuilder();
             sb.append("=".repeat(60)).append("\n");

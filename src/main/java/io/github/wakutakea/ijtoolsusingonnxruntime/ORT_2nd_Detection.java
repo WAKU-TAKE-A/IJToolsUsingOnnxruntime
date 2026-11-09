@@ -83,7 +83,7 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = requireLoadedSession();
+        OrtModel s = requireLoadedSession();
         if (s == null) return;
 
         if (s.getContract() == ModelContract.RF_DETR_OBJECT) {

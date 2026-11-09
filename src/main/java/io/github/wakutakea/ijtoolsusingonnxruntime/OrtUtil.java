@@ -44,7 +44,7 @@ public class OrtUtil {
     public static final int    MAX_SLOTS = 5;
 
     private static OrtEnvironment   env   = null;
-    private static MyOrtSession[] slots   = new MyOrtSession[MAX_SLOTS];
+    private static OrtModel[] slots   = new OrtModel[MAX_SLOTS];
 
     // ---------------------------------------------------------------
     // Environment / Slot management
@@ -57,13 +57,13 @@ public class OrtUtil {
         return env;
     }
 
-    public static MyOrtSession getSlot(int index) {
+    public static OrtModel getSlot(int index) {
         if (index < 0 || index >= MAX_SLOTS)
             throw new IllegalArgumentException("Slot index out of range: " + index);
         return slots[index];
     }
 
-    public static void setSlot(int index, MyOrtSession session) {
+    public static void setSlot(int index, OrtModel session) {
         if (index < 0 || index >= MAX_SLOTS)
             throw new IllegalArgumentException("Slot index out of range: " + index);
         slots[index] = session;
@@ -73,7 +73,7 @@ public class OrtUtil {
     public static String getSlotStatusText() {
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < MAX_SLOTS; i++) {
-            MyOrtSession s = slots[i];
+            OrtModel s = slots[i];
             if (s != null && s.isLoaded()) {
                 sb.append(i).append(": ").append(s.getModelName());
             } else {
