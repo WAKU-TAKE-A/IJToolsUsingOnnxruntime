@@ -3,20 +3,16 @@ package io.github.wakutakea.ijtoolsusingonnxruntime;
 
 import ij.IJ;
 import ij.ImagePlus;
-import ij.gui.DialogListener;
 import ij.gui.GenericDialog;
-import ij.plugin.filter.ExtendedPlugInFilter;
-import ij.plugin.filter.PlugInFilterRunner;
 import ij.process.ImageProcessor;
 import ai.onnxruntime.*;
-import java.awt.AWTEvent;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * 2nd step: Object detection inference.
  */
-public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
+public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
 
     private static int     slotChoice     = 0;
     private static double  scoreThreshold = 0.3;
@@ -26,61 +22,51 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
     private static boolean enableRefreshData = true;
     private static boolean enableLog        = true;
 
-    private ImagePlus imp;
+    // ---------------------------------------------------------------
+    // AbstractOrt2ndPlugin hooks
+    // ---------------------------------------------------------------
 
     @Override
-    public int setup(String arg, ImagePlus imp) {
-        this.imp = imp;
-        return DOES_ALL;
+    protected int getSlotChoice() { return slotChoice; }
+
+    @Override
+    protected void setSlotChoice(int v) { slotChoice = v; }
+
+    @Override
+    protected boolean isEnableRefreshData() { return enableRefreshData; }
+
+    @Override
+    protected void setEnableRefreshData(boolean v) { enableRefreshData = v; }
+
+    @Override
+    protected boolean isEnableLog() { return enableLog; }
+
+    @Override
+    protected void setEnableLog(boolean v) { enableLog = v; }
+
+    @Override
+    protected String dialogTitle() {
+        return "2nd Detection v" + OrtUtil.VERSION;
     }
 
     @Override
-    public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
-        MyOrtSession s = OrtUtil.getSlot(slotChoice);
-        
-
-        GenericDialog gd = new GenericDialog("2nd Detection v" + OrtUtil.VERSION);
-        gd.addChoice("slot", OrtUtil.buildSlotLabels(), OrtUtil.buildSlotLabels()[slotChoice]);
+    protected void addTaskFields(GenericDialog gd) {
         gd.addNumericField("score_threshold", scoreThreshold, 2);
         gd.addNumericField("nms_threshold",   nmsThreshold,   2);
         gd.addCheckbox("show_results_table", showResultsTable);
         gd.addCheckbox("show_roi_manager",   showRoiManager);
-        gd.addCheckbox("enable_refresh_data", enableRefreshData);
-        gd.addCheckbox("enable_log",         enableLog);
-        gd.addMessage(OrtUtil.getSlotStatusText());
-        
-        gd.addDialogListener(this);
-        gd.showDialog();
-        
-        if (gd.wasCanceled()) return DONE;
+    }
 
-        // Parse values (important for macro support)
-        slotChoice       = gd.getNextChoiceIndex();
+    @Override
+    protected void readTaskFields(GenericDialog gd) {
         scoreThreshold   = gd.getNextNumber();
         nmsThreshold     = gd.getNextNumber();
         showResultsTable = gd.getNextBoolean();
         showRoiManager   = gd.getNextBoolean();
-        enableRefreshData= gd.getNextBoolean();
-        enableLog        = gd.getNextBoolean();
-        
-        return DOES_ALL;
     }
 
     @Override
-    @SuppressWarnings("rawtypes")
-    public boolean dialogItemChanged(GenericDialog gd, AWTEvent e) {
-        slotChoice     = gd.getNextChoiceIndex();
-        scoreThreshold = gd.getNextNumber();
-        nmsThreshold   = gd.getNextNumber();
-        showResultsTable = gd.getNextBoolean();
-        showRoiManager   = gd.getNextBoolean();
-        enableRefreshData= gd.getNextBoolean();
-        enableLog        = gd.getNextBoolean();
-
-        if (gd.invalidNumber()) {
-            IJ.showStatus("Invalid number");
-            return false;
-        }
+    protected boolean validateTaskDialog() {
         if (scoreThreshold < 0 || scoreThreshold > 1) {
             IJ.showStatus("Score threshold must be 0-1");
             return false;
@@ -89,20 +75,17 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
             IJ.showStatus("NMS threshold must be 0-1");
             return false;
         }
-
         return true;
     }
 
-    @Override
-    public void setNPasses(int nPasses) {}
+    // ---------------------------------------------------------------
+    // Inference
+    // ---------------------------------------------------------------
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = OrtUtil.getSlot(slotChoice);
-        if (s == null || !s.isLoaded()) {
-            OrtUtil.logError(this.getClass().getSimpleName(), "No model loaded in slot " + slotChoice);
-            return;
-        }
+        MyOrtSession s = requireLoadedSession();
+        if (s == null) return;
 
         if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_DETECTION) {
             RfDetrResults.run(s, ip, imp, slotChoice, scoreThreshold, nmsThreshold, 0.5, 0.5,
@@ -112,7 +95,7 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
 
         // Verify if the model is suitable for Detection
         if (s.getModelType() != MyOrtSession.ModelType.YOLO && s.getModelType() != MyOrtSession.ModelType.YOLOX) {
-            OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - The model in slot " + slotChoice + " is not a Detection model (" + s.getModelType() + ").");
+            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Detection model (" + s.getModelType() + ").");
             return;
         }
 
@@ -123,18 +106,16 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
         String imageTitle = imp.getShortTitle();
 
         // 1. Preprocess
-        boolean isYolox = (s.getModelType() == MyOrtSession.ModelType.YOLOX);
-        float[] inputData = OrtUtil.preprocess(ip, targetW, targetH, isYolox);
-        float[] lbParams  = OrtUtil.calcLetterboxParams(imgW, imgH, targetW, targetH);
+        float[] inputData = preprocess(s, ip);
+        float[] lbParams  = letterboxParams(s, ip);
         float scale   = lbParams[0];
         float padLeft = lbParams[1];
         float padTop  = lbParams[2];
 
         // 2. Inference
-        long startTime = System.currentTimeMillis();
-        System.out.println("DEBUG: Running inference for " + imageTitle + " using slot " + slotChoice);
+        long timer = startTimer();
         try (OrtSession.Result result = s.runInference(inputData)) {
-            long inferenceTime = System.currentTimeMillis() - startTime;
+            long inferenceTime = elapsedMillis(timer);
 
             // 3. Parse output tensor
             OnnxTensor outTensor = (OnnxTensor) result.get(0);
@@ -163,10 +144,6 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
                 nmsResults = Nms.perClass(candidates, (float) nmsThreshold);
             }
 
-            System.out.println("Inference completed in " + inferenceTime + " ms");
-            System.out.println("Candidates (pre-NMS): " + candidates.size());
-            System.out.println("Candidates (post-NMS): " + nmsResults.size());
-
             if (enableLog) {
                 IJ.log("Inference time: " + inferenceTime + " ms");
                 IJ.log("Detections (pre-NMS):  " + candidates.size());
@@ -178,8 +155,7 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
             outputResults(nmsResults, s, imageTitle, inferenceTime);
 
         } catch (Throwable t) {
-            t.printStackTrace();
-            OrtUtil.logError(this.getClass().getSimpleName(), "Detection inference failed " + t.toString());
+            handleInferenceFailure("Detection inference failed ", t);
         }
     }
 
@@ -192,8 +168,8 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
                            float scale, float padLeft, float padTop,
                            int inputW, int inputH, List<float[]> out) {
 
-        int d1 = data.length;    
-        int d2 = data[0].length; 
+        int d1 = data.length;
+        int d2 = data[0].length;
         int C  = 4 + numClasses;
 
         boolean channelFirst = (d1 == C && d1 < d2);
@@ -219,7 +195,7 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
                 bh = h * inputH;
                 bx = cx * inputW - bw / 2;
                 by = cy * inputH - bh / 2;
-            } else { 
+            } else {
                 bw = w;
                 bh = h;
                 bx = cx - bw / 2;
@@ -267,7 +243,7 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
     private void parseYOLOX(float[][] data, int numClasses, int imgW, int imgH,
                             float scoreTh, float scale, float padLeft, float padTop,
                             int inputW, List<float[]> out) {
-        
+
         int[] strides = {8, 16, 32};
         int[][] gridStride = OrtUtil.makeGridStride(inputW, strides);
         int[] grid   = gridStride[0];
@@ -280,7 +256,7 @@ public class ORT_2nd_Detection implements ExtendedPlugInFilter, DialogListener {
             float tw  = data[i][2];
             float th  = data[i][3];
             float obj = data[i][4];
-            
+
             float maxClsScore = -1;
             int   maxClass    = 0;
             for (int c = 0; c < numClasses; c++) {

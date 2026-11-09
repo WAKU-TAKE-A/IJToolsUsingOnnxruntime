@@ -2,14 +2,9 @@
 package io.github.wakutakea.ijtoolsusingonnxruntime;
 
 import ij.IJ;
-import ij.ImagePlus;
-import ij.gui.DialogListener;
 import ij.gui.GenericDialog;
-import ij.plugin.filter.ExtendedPlugInFilter;
-import ij.plugin.filter.PlugInFilterRunner;
 import ij.process.ImageProcessor;
 import ai.onnxruntime.*;
-import java.awt.AWTEvent;
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,7 +12,7 @@ import java.util.List;
 /**
  * 2nd step: Pose estimation inference.
  */
-public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
+public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
 
     private static int     slotChoice     = 0;
     private static double  scoreThreshold = 0.3;
@@ -27,59 +22,51 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
     private static boolean enableRefreshData = true;
     private static boolean enableLog        = true;
 
-    private ImagePlus imp;
+    // ---------------------------------------------------------------
+    // AbstractOrt2ndPlugin hooks
+    // ---------------------------------------------------------------
 
     @Override
-    public int setup(String arg, ImagePlus imp) {
-        this.imp = imp;
-        return DOES_ALL;
+    protected int getSlotChoice() { return slotChoice; }
+
+    @Override
+    protected void setSlotChoice(int v) { slotChoice = v; }
+
+    @Override
+    protected boolean isEnableRefreshData() { return enableRefreshData; }
+
+    @Override
+    protected void setEnableRefreshData(boolean v) { enableRefreshData = v; }
+
+    @Override
+    protected boolean isEnableLog() { return enableLog; }
+
+    @Override
+    protected void setEnableLog(boolean v) { enableLog = v; }
+
+    @Override
+    protected String dialogTitle() {
+        return "2nd Pose v" + OrtUtil.VERSION;
     }
 
     @Override
-    public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
-        MyOrtSession s = OrtUtil.getSlot(slotChoice);
-
-        GenericDialog gd = new GenericDialog("2nd Pose v" + OrtUtil.VERSION);
-        gd.addChoice("slot", OrtUtil.buildSlotLabels(), OrtUtil.buildSlotLabels()[slotChoice]);
+    protected void addTaskFields(GenericDialog gd) {
         gd.addNumericField("score_threshold", scoreThreshold, 2);
         gd.addNumericField("nms_threshold",   nmsThreshold,   2);
         gd.addNumericField("kpt_threshold",   kptThreshold,   2);
         gd.addCheckbox("show_roi_manager",   showRoiManager);
-        gd.addCheckbox("enable_refresh_data", enableRefreshData);
-        gd.addCheckbox("enable_log",         enableLog);
-        gd.addMessage(OrtUtil.getSlotStatusText());
-        
-        gd.addDialogListener(this);
-        gd.showDialog();
-        
-        if (gd.wasCanceled()) return DONE;
-
-        slotChoice       = gd.getNextChoiceIndex();
-        scoreThreshold   = gd.getNextNumber();
-        nmsThreshold     = gd.getNextNumber();
-        kptThreshold     = gd.getNextNumber();
-        showRoiManager   = gd.getNextBoolean();
-        enableRefreshData= gd.getNextBoolean();
-        enableLog        = gd.getNextBoolean();
-        
-        return DOES_ALL;
     }
 
     @Override
-    @SuppressWarnings("rawtypes")
-    public boolean dialogItemChanged(GenericDialog gd, AWTEvent e) {
-        slotChoice     = gd.getNextChoiceIndex();
+    protected void readTaskFields(GenericDialog gd) {
         scoreThreshold = gd.getNextNumber();
         nmsThreshold   = gd.getNextNumber();
         kptThreshold   = gd.getNextNumber();
-        showRoiManager   = gd.getNextBoolean();
-        enableRefreshData= gd.getNextBoolean();
-        enableLog        = gd.getNextBoolean();
+        showRoiManager = gd.getNextBoolean();
+    }
 
-        if (gd.invalidNumber()) {
-            IJ.showStatus("Invalid number");
-            return false;
-        }
+    @Override
+    protected boolean validateTaskDialog() {
         if (scoreThreshold < 0 || scoreThreshold > 1) {
             IJ.showStatus("Score threshold must be 0-1");
             return false;
@@ -92,20 +79,17 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
             IJ.showStatus("Keypoint threshold must be 0-1");
             return false;
         }
-
         return true;
     }
 
-    @Override
-    public void setNPasses(int nPasses) {}
+    // ---------------------------------------------------------------
+    // Inference
+    // ---------------------------------------------------------------
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = OrtUtil.getSlot(slotChoice);
-        if (s == null || !s.isLoaded()) {
-            OrtUtil.logError(this.getClass().getSimpleName(), "No model loaded in slot " + slotChoice);
-            return;
-        }
+        MyOrtSession s = requireLoadedSession();
+        if (s == null) return;
 
         if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_POSE) {
             RfDetrResults.run(s, ip, imp, slotChoice, scoreThreshold, nmsThreshold, 0.5, kptThreshold,
@@ -115,7 +99,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
 
         // Verify if the model is suitable for Pose
         if (s.getModelType() != MyOrtSession.ModelType.POSE) {
-            OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - The model in slot " + slotChoice + " is not a Pose model (" + s.getModelType() + ").");
+            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Pose model (" + s.getModelType() + ").");
             return;
         }
 
@@ -126,17 +110,16 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
         String imageTitle = imp.getShortTitle();
 
         // 1. Preprocess
-        boolean isYolox = (s.getModelType() == MyOrtSession.ModelType.YOLOX);
-        float[] inputData = OrtUtil.preprocess(ip, targetW, targetH, isYolox);
-        float[] lbParams  = OrtUtil.calcLetterboxParams(imgW, imgH, targetW, targetH);
+        float[] inputData = preprocess(s, ip);
+        float[] lbParams  = letterboxParams(s, ip);
         float scale   = lbParams[0];
         float padLeft = lbParams[1];
         float padTop  = lbParams[2];
 
         // 2. Inference
-        long startTime = System.currentTimeMillis();
+        long timer = startTimer();
         try (OrtSession.Result result = s.runInference(inputData)) {
-            long inferenceTime = System.currentTimeMillis() - startTime;
+            long inferenceTime = elapsedMillis(timer);
 
             // 3. Parse output
             OnnxTensor outTensor = (OnnxTensor) result.get(0);
@@ -168,8 +151,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
             outputResults(results, s, imageTitle);
 
         } catch (Throwable t) {
-            t.printStackTrace();
-            OrtUtil.logError(this.getClass().getSimpleName(), "Pose inference failed " + t.toString());
+            handleInferenceFailure("Pose inference failed ", t);
         }
     }
 
@@ -178,7 +160,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
                            int inputW, int inputH, List<float[]> out) {
         int d1 = data.length;
         int d2 = data[0].length;
-        int C  = data.length; 
+        int C  = data.length;
 
         boolean channelFirst = (d1 > d2); // Simplified check for pose [C, N]
         int numAnchors = channelFirst ? d2 : d1;
@@ -199,7 +181,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
             float by = cy - bh / 2;
 
             float[] restored = OrtUtil.restoreBbox(bx, by, bw, bh, scale, padLeft, padTop);
-            
+
             float[] res = new float[5 + numKpts * 3];
             res[0] = Math.max(0, Math.min(restored[0], imgW));
             res[1] = Math.max(0, Math.min(restored[1], imgH));
@@ -211,7 +193,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
                 float kx = channelFirst ? data[5 + k*3][i]   : data[i][5 + k*3];
                 float ky = channelFirst ? data[5 + k*3 + 1][i] : data[i][5 + k*3 + 1];
                 float ks = channelFirst ? data[5 + k*3 + 2][i] : data[i][5 + k*3 + 2];
-                
+
                 float[] rk = OrtUtil.restorePoint(kx, ky, scale, padLeft, padTop);
                 res[5 + k*3]     = rk[0];
                 res[5 + k*3 + 1] = rk[1];
@@ -233,13 +215,13 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
             float x2      = data[i][2];
             float y2      = data[i][3];
             float score   = data[i][4];
-            
+
             if (score < scoreTh) continue;
 
             float bw = x2 - x1;
             float bh = y2 - y1;
             float[] restored = OrtUtil.restoreBbox(x1, y1, bw, bh, scale, padLeft, padTop);
-            
+
             float[] res = new float[5 + numKpts * 3];
             res[0] = Math.max(0, Math.min(restored[0], imgW));
             res[1] = Math.max(0, Math.min(restored[1], imgH));
@@ -251,7 +233,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
                 float kx = data[i][6 + k*3];
                 float ky = data[i][6 + k*3 + 1];
                 float ks = data[i][6 + k*3 + 2];
-                
+
                 float[] rk = OrtUtil.restorePoint(kx, ky, scale, padLeft, padTop);
                 res[5 + k*3]     = rk[0];
                 res[5 + k*3 + 1] = rk[1];
@@ -269,7 +251,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
                 roi.setName("person (" + String.format("%.2f", r[4]) + ")");
                 roi.setStrokeColor(Color.YELLOW);
                 rm.addRoi(roi);
-                
+
                 int numKpts = (r.length - 5) / 3;
                 for (int k = 0; k < numKpts; k++) {
                     float kx = r[5 + k*3];
@@ -284,7 +266,7 @@ public class ORT_2nd_Pose implements ExtendedPlugInFilter, DialogListener {
             }
         }
     }
-    
+
     private static java.awt.Color[] COLORS = { java.awt.Color.RED, java.awt.Color.GREEN, java.awt.Color.BLUE, java.awt.Color.YELLOW, java.awt.Color.CYAN, java.awt.Color.MAGENTA };
     private java.awt.Color getColor(int i) { return COLORS[i % COLORS.length]; }
 }

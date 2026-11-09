@@ -2,107 +2,91 @@
 package io.github.wakutakea.ijtoolsusingonnxruntime;
 
 import ij.IJ;
-import ij.ImagePlus;
-import ij.gui.DialogListener;
 import ij.gui.GenericDialog;
 import ij.measure.ResultsTable;
-import ij.plugin.filter.ExtendedPlugInFilter;
-import ij.plugin.filter.PlugInFilterRunner;
 import ij.process.ImageProcessor;
 import ai.onnxruntime.*;
-import java.awt.AWTEvent;
 
 /**
  * 2nd step: Image classification inference.
  */
-public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
+public class ORT_2nd_Classify extends AbstractOrt2ndPlugin {
 
     private static int     slotChoice   = 0;
     private static int     topK         = 1;
     private static boolean enableRefreshData = true;
     private static boolean enableLog    = true;
 
-    private ImagePlus imp;
+    // ---------------------------------------------------------------
+    // AbstractOrt2ndPlugin hooks
+    // ---------------------------------------------------------------
 
     @Override
-    public int setup(String arg, ImagePlus imp) {
-        this.imp = imp;
-        return DOES_ALL;
+    protected int getSlotChoice() { return slotChoice; }
+
+    @Override
+    protected void setSlotChoice(int v) { slotChoice = v; }
+
+    @Override
+    protected boolean isEnableRefreshData() { return enableRefreshData; }
+
+    @Override
+    protected void setEnableRefreshData(boolean v) { enableRefreshData = v; }
+
+    @Override
+    protected boolean isEnableLog() { return enableLog; }
+
+    @Override
+    protected void setEnableLog(boolean v) { enableLog = v; }
+
+    @Override
+    protected String dialogTitle() {
+        return "2nd Classify v" + OrtUtil.VERSION;
     }
 
     @Override
-    public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
-        MyOrtSession s = OrtUtil.getSlot(slotChoice);
-
-        GenericDialog gd = new GenericDialog("2nd Classify v" + OrtUtil.VERSION);
-        gd.addChoice("slot", OrtUtil.buildSlotLabels(), OrtUtil.buildSlotLabels()[slotChoice]);
+    protected void addTaskFields(GenericDialog gd) {
         gd.addNumericField("top_k", topK, 0);
-        gd.addCheckbox("enable_refresh_data", enableRefreshData);
-        gd.addCheckbox("enable_log", enableLog);
-        gd.addMessage(OrtUtil.getSlotStatusText());
-
-        gd.addDialogListener(this);
-        gd.showDialog();
-
-        if (gd.wasCanceled()) return DONE;
-
-        slotChoice        = gd.getNextChoiceIndex();
-        topK              = (int) gd.getNextNumber();
-        enableRefreshData = gd.getNextBoolean();
-        enableLog         = gd.getNextBoolean();
-        
-        return DOES_ALL;
     }
 
     @Override
-    @SuppressWarnings("rawtypes")
-    public boolean dialogItemChanged(GenericDialog gd, AWTEvent e) {
-        slotChoice = gd.getNextChoiceIndex();
-        topK       = (int) gd.getNextNumber();
-        enableRefreshData = gd.getNextBoolean();
-        enableLog  = gd.getNextBoolean();
+    protected void readTaskFields(GenericDialog gd) {
+        topK = (int) gd.getNextNumber();
+    }
 
-        if (gd.invalidNumber()) {
-            IJ.showStatus("Invalid number");
-            return false;
-        }
+    @Override
+    protected boolean validateTaskDialog() {
         if (topK < 1) {
             IJ.showStatus("Top-K must be at least 1");
             return false;
         }
-
         return true;
     }
 
-    @Override
-    public void setNPasses(int nPasses) {}
+    // ---------------------------------------------------------------
+    // Inference
+    // ---------------------------------------------------------------
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = OrtUtil.getSlot(slotChoice);
-        if (s == null || !s.isLoaded()) {
-            OrtUtil.logError(this.getClass().getSimpleName(), "No model loaded in slot " + slotChoice);
-            return;
-        }
+        MyOrtSession s = requireLoadedSession();
+        if (s == null) return;
 
         // Verify if the model is suitable for Classification
         if (s.getModelType() != MyOrtSession.ModelType.CLASSIFICATION) {
-            OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - The model in slot " + slotChoice + " is not a Classification model (" + s.getModelType() + ").");
+            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Classification model (" + s.getModelType() + ").");
             return;
         }
 
-        int targetW = s.getInputWidth();
-        int targetH = s.getInputHeight();
         String imageTitle = imp.getShortTitle();
 
         // 1. Preprocess
-        boolean isYolox = (s.getModelType() == MyOrtSession.ModelType.YOLOX);
-        float[] inputData = OrtUtil.preprocess(ip, targetW, targetH, isYolox);
+        float[] inputData = preprocess(s, ip);
 
         // 2. Inference
-        long startTime = System.currentTimeMillis();
+        long timer = startTimer();
         try (OrtSession.Result result = s.runInference(inputData)) {
-            long inferenceTime = System.currentTimeMillis() - startTime;
+            long inferenceTime = elapsedMillis(timer);
 
             // 3. Parse output (Softmax/Logits)
             OnnxTensor outTensor = (OnnxTensor) result.get(0);
@@ -135,8 +119,7 @@ public class ORT_2nd_Classify implements ExtendedPlugInFilter, DialogListener {
             rt.show("Results");
 
         } catch (Throwable t) {
-            t.printStackTrace();
-            OrtUtil.logError(this.getClass().getSimpleName(), "Classification failed " + t.toString());
+            handleInferenceFailure("Classification failed ", t);
         }
     }
 

@@ -3,14 +3,10 @@ package io.github.wakutakea.ijtoolsusingonnxruntime;
 
 import ij.IJ;
 import ij.ImagePlus;
-import ij.gui.DialogListener;
 import ij.gui.GenericDialog;
-import ij.plugin.filter.ExtendedPlugInFilter;
-import ij.plugin.filter.PlugInFilterRunner;
 import ij.process.ImageProcessor;
 import ij.process.ByteProcessor;
 import ai.onnxruntime.*;
-import java.awt.AWTEvent;
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
@@ -18,7 +14,7 @@ import java.util.List;
 /**
  * 2nd step: Instance segmentation inference.
  */
-public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListener {
+public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
 
     private static int     slotChoice       = 0;
     private static double  scoreThreshold   = 0.3;
@@ -32,18 +28,35 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
     private static boolean enableRefreshData = true;
     private static boolean enableLog        = true;
 
-    private ImagePlus imp;
+    // ---------------------------------------------------------------
+    // AbstractOrt2ndPlugin hooks
+    // ---------------------------------------------------------------
 
     @Override
-    public int setup(String arg, ImagePlus imp) {
-        this.imp = imp;
-        return DOES_ALL;
+    protected int getSlotChoice() { return slotChoice; }
+
+    @Override
+    protected void setSlotChoice(int v) { slotChoice = v; }
+
+    @Override
+    protected boolean isEnableRefreshData() { return enableRefreshData; }
+
+    @Override
+    protected void setEnableRefreshData(boolean v) { enableRefreshData = v; }
+
+    @Override
+    protected boolean isEnableLog() { return enableLog; }
+
+    @Override
+    protected void setEnableLog(boolean v) { enableLog = v; }
+
+    @Override
+    protected String dialogTitle() {
+        return "2nd Segmentation v" + OrtUtil.VERSION;
     }
 
     @Override
-    public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
-        GenericDialog gd = new GenericDialog("2nd Segmentation v" + OrtUtil.VERSION);
-        gd.addChoice("slot", OrtUtil.buildSlotLabels(), OrtUtil.buildSlotLabels()[slotChoice]);
+    protected void addTaskFields(GenericDialog gd) {
         gd.addNumericField("score_threshold", scoreThreshold, 2);
         gd.addNumericField("nms_threshold",   nmsThreshold,   2);
         gd.addNumericField("mask_threshold",  maskThreshold,  2);
@@ -52,34 +65,10 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
         gd.addCheckbox("show_overlay",        showOverlay);
         gd.addNumericField("overlay_alpha",   overlayAlpha, 0);
         gd.addCheckbox("export_mask",         exportMask);
-        gd.addCheckbox("enable_refresh_data", enableRefreshData);
-        gd.addCheckbox("enable_log",          enableLog);
-        gd.addMessage(OrtUtil.getSlotStatusText());
-        
-        gd.addDialogListener(this);
-        gd.showDialog();
-        
-        if (gd.wasCanceled()) return DONE;
-
-        slotChoice       = gd.getNextChoiceIndex();
-        scoreThreshold   = gd.getNextNumber();
-        nmsThreshold     = gd.getNextNumber();
-        maskThreshold    = gd.getNextNumber();
-        showResultsTable = gd.getNextBoolean();
-        showRoiManager   = gd.getNextBoolean();
-        showOverlay      = gd.getNextBoolean();
-        overlayAlpha     = (int) gd.getNextNumber();
-        exportMask       = gd.getNextBoolean();
-        enableRefreshData= gd.getNextBoolean();
-        enableLog        = gd.getNextBoolean();
-        
-        return DOES_ALL;
     }
 
     @Override
-    @SuppressWarnings("rawtypes")
-    public boolean dialogItemChanged(GenericDialog gd, AWTEvent e) {
-        slotChoice       = gd.getNextChoiceIndex();
+    protected void readTaskFields(GenericDialog gd) {
         scoreThreshold   = gd.getNextNumber();
         nmsThreshold     = gd.getNextNumber();
         maskThreshold    = gd.getNextNumber();
@@ -88,13 +77,10 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
         showOverlay      = gd.getNextBoolean();
         overlayAlpha     = (int) gd.getNextNumber();
         exportMask       = gd.getNextBoolean();
-        enableRefreshData= gd.getNextBoolean();
-        enableLog        = gd.getNextBoolean();
+    }
 
-        if (gd.invalidNumber()) {
-            IJ.showStatus("Invalid number");
-            return false;
-        }
+    @Override
+    protected boolean validateTaskDialog() {
         if (scoreThreshold < 0 || scoreThreshold > 1) {
             IJ.showStatus("Score threshold must be 0-1");
             return false;
@@ -111,20 +97,17 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
             IJ.showStatus("Overlay alpha must be 0-255");
             return false;
         }
-
         return true;
     }
 
-    @Override
-    public void setNPasses(int nPasses) {}
+    // ---------------------------------------------------------------
+    // Inference
+    // ---------------------------------------------------------------
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = OrtUtil.getSlot(slotChoice);
-        if (s == null || !s.isLoaded()) {
-            OrtUtil.logError(this.getClass().getSimpleName(), "No model loaded in slot " + slotChoice);
-            return;
-        }
+        MyOrtSession s = requireLoadedSession();
+        if (s == null) return;
 
         if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_SEGMENTATION) {
             RfDetrResults.run(s, ip, imp, slotChoice, scoreThreshold, nmsThreshold, maskThreshold, 0.5,
@@ -134,7 +117,7 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
         }
 
         if (s.getModelType() != MyOrtSession.ModelType.SEGMENTATION) {
-            OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - The model in slot " + slotChoice + " is not a Segmentation model.");
+            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Segmentation model.");
             return;
         }
 
@@ -145,16 +128,16 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
         String imageTitle = imp.getShortTitle();
 
         // 1. Preprocess
-        float[] inputData = OrtUtil.preprocess(ip, targetW, targetH, false);
-        float[] lbParams  = OrtUtil.calcLetterboxParams(imgW, imgH, targetW, targetH);
+        float[] inputData = preprocess(s, ip);
+        float[] lbParams  = letterboxParams(s, ip);
         float scale   = lbParams[0];
         float padLeft = lbParams[1];
         float padTop  = lbParams[2];
 
         // 2. Inference
-        long startTime = System.currentTimeMillis();
+        long timer = startTimer();
         try (OrtSession.Result result = s.runInference(inputData)) {
-            long inferenceTime = System.currentTimeMillis() - startTime;
+            long inferenceTime = elapsedMillis(timer);
 
             if (result.size() < 2) {
                 OrtUtil.logError(this.getClass().getSimpleName(), "YOLO Segmentation requires at least 2 outputs, got " + result.size());
@@ -278,15 +261,14 @@ public class ORT_2nd_Segmentation implements ExtendedPlugInFilter, DialogListene
             outputSegmentationResults(nmsResults, proto, protoH, protoW, targetW, targetH, scale, padLeft, padTop, imgW, imgH, imageTitle, s, inferenceTime);
 
         } catch (Throwable t) {
-            t.printStackTrace();
-            OrtUtil.logError(this.getClass().getSimpleName(), "Segmentation inference failed: " + t.toString());
+            handleInferenceFailure("Segmentation inference failed: ", t);
         }
     }
 
-    private void outputSegmentationResults(List<float[]> results, float[][][] proto, int protoH, int protoW, 
+    private void outputSegmentationResults(List<float[]> results, float[][][] proto, int protoH, int protoW,
                                             int targetW, int targetH, float scale, float padLeft, float padTop,
                                             int imgW, int imgH, String imageTitle, MyOrtSession s, long inferenceTime) {
-        
+
         ij.plugin.frame.RoiManager rm = null;
         if (showRoiManager) {
             rm = OrtUtil.getRoiManager(enableRefreshData, false);
