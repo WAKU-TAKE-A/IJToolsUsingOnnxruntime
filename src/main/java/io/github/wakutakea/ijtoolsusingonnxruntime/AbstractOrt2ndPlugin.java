@@ -149,12 +149,12 @@ public abstract class AbstractOrt2ndPlugin implements ExtendedPlugInFilter, Dial
 
     /** Whether the session's model uses the YOLOX preprocessing variant (BGR, [0,255]). */
     protected static boolean isYolox(MyOrtSession s) {
-        return s.getModelType() == MyOrtSession.ModelType.YOLOX;
+        return s.getContract().isYolox();
     }
 
     /** The model contract of a loaded session (never null for sessions loaded via 1st). */
     protected static ModelContract contractOf(MyOrtSession s) {
-        return ModelContract.of(s.getModelType(), s.getCoordFormat());
+        return s.getContract();
     }
 
     /**

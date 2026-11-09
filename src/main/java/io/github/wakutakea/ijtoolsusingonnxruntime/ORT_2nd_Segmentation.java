@@ -107,14 +107,15 @@ public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
         MyOrtSession s = requireLoadedSession();
         if (s == null) return;
 
-        if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_SEGMENTATION) {
+        if (s.getContract() == ModelContract.RF_DETR_SEGMENT) {
             RfDetrResults.run(s, ip, imp,
                     renderOptions(maskThreshold, 0.5, showResultsTable, showRoiManager, showOverlay, overlayAlpha, exportMask),
                     scoreThreshold, nmsThreshold);
             return;
         }
 
-        if (s.getModelType() != MyOrtSession.ModelType.SEGMENTATION) {
+        if (contractOf(s).task() != ModelContract.Task.SEGMENTATION
+                || contractOf(s).family() != ModelContract.Family.YOLO) {
             logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Segmentation model.");
             return;
         }
@@ -170,7 +171,7 @@ public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
             int numClasses = s.getNumClasses();
 
             List<Detection> candidates = YoloDecoder.decodeSegmentation(
-                    data0, numClasses, s.getCoordFormat(), (float) scoreThreshold, tf);
+                    data0, numClasses, s.getContract(), (float) scoreThreshold, tf);
 
             // NMS per the contract's policy (E2E formats pass through)
             List<Detection> nmsResults = PostProcessors.applyNms(candidates, contractOf(s), (float) nmsThreshold);

@@ -91,7 +91,8 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
     public void run(ImageProcessor ip) {
         MyOrtSession s = requireLoadedSession();
         if (s == null) return;
-        if (s.getModelType() != MyOrtSession.ModelType.OBB) {
+        if (contractOf(s).task() != ModelContract.Task.OBB
+                || contractOf(s).family() != ModelContract.Family.YOLO) {
             logError("Model Type Mismatch - The model in slot " + slotChoice + " is not an OBB model.");
             return;
         }
@@ -117,7 +118,7 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
             int numClasses = s.getNumClasses();
 
             List<Detection> candidates = YoloDecoder.decodeObb(
-                    data, numClasses, s.getCoordFormat(), (float) scoreThreshold, prep.transform());
+                    data, numClasses, s.getContract(), (float) scoreThreshold, prep.transform());
 
             // 3. NMS per the contract's policy (axis-aligned envelope IoU
             //    approximation, as before; E2E formats pass through)

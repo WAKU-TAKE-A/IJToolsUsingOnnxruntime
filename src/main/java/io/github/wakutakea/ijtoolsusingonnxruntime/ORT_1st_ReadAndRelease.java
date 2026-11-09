@@ -149,11 +149,8 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
                 existing.release();
             }
 
-            MyOrtSession.ModelType   type  = resolveModelType(formatChoice);
-            MyOrtSession.CoordFormat coord = resolveCoordFormat(formatChoice);
-
             MyOrtSession s = new MyOrtSession();
-            s.load(modelPath, type, coord);
+            s.load(modelPath, ModelContract.fromIndex(formatChoice));
 
             // Handle dynamic input shape
             if (s.getInputWidth() <= 0 || s.getInputHeight() <= 0) {
@@ -182,7 +179,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
             // A mismatch is always a load failure, regardless of model family
             // (YOLO / RF-DETR) or macro execution: continuing would let the 2nd
             // plugins interpret the output tensor with the wrong format.
-            String warning = s.validateFormat();
+            String warning = s.validate();
             if (warning != null) {
                 OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - " + warning);
                 s.release();
@@ -265,11 +262,4 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
         }
     }
 
-    private MyOrtSession.ModelType resolveModelType(int choice) {
-        return ModelContract.fromIndex(choice).modelType();
-    }
-
-    private MyOrtSession.CoordFormat resolveCoordFormat(int choice) {
-        return ModelContract.fromIndex(choice).coordFormat();
-    }
 }
