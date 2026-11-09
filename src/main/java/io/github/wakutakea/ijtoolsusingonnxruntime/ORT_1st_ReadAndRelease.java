@@ -34,22 +34,15 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
         "release_all"
     };
 
-    private static final String[] FORMAT_LABELS = {
-        "YOLO_Object_Pixel",       // 0
-        "YOLO_Object_Normalized",  // 1
-        "YOLO_Object_E2E",         // 2
-        "YOLO_Class",              // 3
-        "YOLO_Pose",               // 4
-        "YOLO_Pose_E2E",           // 5
-        "YOLO_Segment",            // 6
-        "YOLO_Segment_E2E",        // 7
-        "YOLO_OBB",                // 8
-        "YOLO_OBB_E2E",            // 9
-        "YOLOX_Object_Undecoded",  // 10
-        "RF_DETR_Object",         // 11
-        "RF_DETR_Segment",        // 12
-        "RF_DETR_Pose",           // 13
-    };
+    // Format labels and indices are owned by ModelContract (declaration
+    // order = the historical index order below). This array is only the
+    // dialog-facing view of ModelContract.labels().
+    //   0 YOLO_Object_Pixel, 1 YOLO_Object_Normalized, 2 YOLO_Object_E2E,
+    //   3 YOLO_Class, 4 YOLO_Pose, 5 YOLO_Pose_E2E, 6 YOLO_Segment,
+    //   7 YOLO_Segment_E2E, 8 YOLO_OBB, 9 YOLO_OBB_E2E,
+    //   10 YOLOX_Object_Undecoded, 11 RF_DETR_Object, 12 RF_DETR_Segment,
+    //   13 RF_DETR_Pose
+    private static final String[] FORMAT_LABELS = ModelContract.labels();
 
     // ---------------------------------------------------------------
     // Persistent dialog state (static)
@@ -67,7 +60,6 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
     @Override
     public int setup(String arg, ImagePlus imp) {
-        System.out.println("DEBUG: 1st Read and Release setup() called with arg: " + arg);
         return NO_IMAGE_REQUIRED;
     }
 
@@ -160,10 +152,8 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
             MyOrtSession.ModelType   type  = resolveModelType(formatChoice);
             MyOrtSession.CoordFormat coord = resolveCoordFormat(formatChoice);
 
-            System.out.println("DEBUG: Attempting to load model: " + modelPath);
             MyOrtSession s = new MyOrtSession();
             s.load(modelPath, type, coord);
-            System.out.println("DEBUG: Model loaded: " + s.getModelName() + " (" + type + ")");
 
             // Handle dynamic input shape
             if (s.getInputWidth() <= 0 || s.getInputHeight() <= 0) {
@@ -276,35 +266,10 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
     }
 
     private MyOrtSession.ModelType resolveModelType(int choice) {
-        switch (choice) {
-            case 0: case 1: case 2: return MyOrtSession.ModelType.YOLO;
-            case 3:                 return MyOrtSession.ModelType.CLASSIFICATION;
-            case 4: case 5:         return MyOrtSession.ModelType.POSE;
-            case 6: case 7:         return MyOrtSession.ModelType.SEGMENTATION;
-            case 8: case 9:         return MyOrtSession.ModelType.OBB;
-            case 10:                return MyOrtSession.ModelType.YOLOX;
-            case 11:                return MyOrtSession.ModelType.RF_DETR_DETECTION;
-            case 12:                return MyOrtSession.ModelType.RF_DETR_SEGMENTATION;
-            case 13:                return MyOrtSession.ModelType.RF_DETR_POSE;
-            default:                return MyOrtSession.ModelType.YOLO;
-        }
+        return ModelContract.fromIndex(choice).modelType();
     }
 
     private MyOrtSession.CoordFormat resolveCoordFormat(int choice) {
-        switch (choice) {
-            case 0:  return MyOrtSession.CoordFormat.YOLO_PIXEL;
-            case 1:  return MyOrtSession.CoordFormat.YOLO_NORMALIZED;
-            case 2:  return MyOrtSession.CoordFormat.YOLO_OBJECT_E2E;
-            case 3:  return MyOrtSession.CoordFormat.YOLO_PIXEL;
-            case 4:  return MyOrtSession.CoordFormat.YOLO_POSE;
-            case 5:  return MyOrtSession.CoordFormat.YOLO_POSE_E2E;
-            case 6:  return MyOrtSession.CoordFormat.YOLO_SEGMENT;
-            case 7:  return MyOrtSession.CoordFormat.YOLO_SEGMENT_E2E;
-            case 8:  return MyOrtSession.CoordFormat.YOLO_OBB;
-            case 9:  return MyOrtSession.CoordFormat.YOLO_OBB_E2E;
-            case 10: return MyOrtSession.CoordFormat.YOLOX_UNDECODED;
-            case 11: case 12: case 13: return MyOrtSession.CoordFormat.RF_DETR;
-            default: return MyOrtSession.CoordFormat.YOLO_PIXEL;
-        }
+        return ModelContract.fromIndex(choice).coordFormat();
     }
 }

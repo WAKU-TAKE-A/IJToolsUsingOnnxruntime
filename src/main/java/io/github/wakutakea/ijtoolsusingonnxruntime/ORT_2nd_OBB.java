@@ -2,16 +2,11 @@
 package io.github.wakutakea.ijtoolsusingonnxruntime;
 
 import ij.IJ;
-import ij.ImagePlus;
-import ij.gui.DialogListener;
 import ij.gui.GenericDialog;
 import ij.gui.PolygonRoi;
 import ij.gui.Roi;
-import ij.plugin.filter.ExtendedPlugInFilter;
-import ij.plugin.filter.PlugInFilterRunner;
 import ij.process.ImageProcessor;
 import ai.onnxruntime.*;
-import java.awt.AWTEvent;
 import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +23,7 @@ import java.util.List;
  *
  * Output: PolygonRoi (4 rotated corners) added to ROI Manager and/or Overlay.
  */
-public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
+public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
 
     private static int     slotChoice        = 0;
     private static double  scoreThreshold    = 0.3;
@@ -39,75 +34,68 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
     private static boolean enableRefreshData = true;
     private static boolean enableLog         = true;
 
-    private ImagePlus imp;
+    // ---------------------------------------------------------------
+    // AbstractOrt2ndPlugin hooks
+    // ---------------------------------------------------------------
 
     @Override
-    public int setup(String arg, ImagePlus imp) {
-        this.imp = imp;
-        return DOES_ALL;
+    protected int getSlotChoice() { return slotChoice; }
+
+    @Override
+    protected void setSlotChoice(int v) { slotChoice = v; }
+
+    @Override
+    protected boolean isEnableRefreshData() { return enableRefreshData; }
+
+    @Override
+    protected void setEnableRefreshData(boolean v) { enableRefreshData = v; }
+
+    @Override
+    protected boolean isEnableLog() { return enableLog; }
+
+    @Override
+    protected void setEnableLog(boolean v) { enableLog = v; }
+
+    @Override
+    protected String dialogTitle() {
+        return "2nd OBB v" + OrtUtil.VERSION;
     }
 
     @Override
-    public int showDialog(ImagePlus imp, String command, PlugInFilterRunner pfr) {
-        GenericDialog gd = new GenericDialog("2nd OBB v" + OrtUtil.VERSION);
-        gd.addChoice("slot",             OrtUtil.buildSlotLabels(), OrtUtil.buildSlotLabels()[slotChoice]);
+    protected void addTaskFields(GenericDialog gd) {
         gd.addNumericField("score_threshold", scoreThreshold, 2);
         gd.addNumericField("nms_threshold",   nmsThreshold,   2);
         gd.addCheckbox("show_results_table",  showResultsTable);
         gd.addCheckbox("show_roi_manager",    showRoiManager);
         gd.addCheckbox("show_overlay",        showOverlay);
-        gd.addCheckbox("enable_refresh_data", enableRefreshData);
-        gd.addCheckbox("enable_log",          enableLog);
-        gd.addMessage(OrtUtil.getSlotStatusText());
-
-        gd.addDialogListener(this);
-        gd.showDialog();
-
-        if (gd.wasCanceled()) return DONE;
-
-        slotChoice        = gd.getNextChoiceIndex();
-        scoreThreshold    = gd.getNextNumber();
-        nmsThreshold      = gd.getNextNumber();
-        showResultsTable  = gd.getNextBoolean();
-        showRoiManager    = gd.getNextBoolean();
-        showOverlay       = gd.getNextBoolean();
-        enableRefreshData = gd.getNextBoolean();
-        enableLog         = gd.getNextBoolean();
-
-        return DOES_ALL;
     }
 
     @Override
-    @SuppressWarnings("rawtypes")
-    public boolean dialogItemChanged(GenericDialog gd, AWTEvent e) {
-        slotChoice        = gd.getNextChoiceIndex();
+    protected void readTaskFields(GenericDialog gd) {
         scoreThreshold    = gd.getNextNumber();
         nmsThreshold      = gd.getNextNumber();
         showResultsTable  = gd.getNextBoolean();
         showRoiManager    = gd.getNextBoolean();
         showOverlay       = gd.getNextBoolean();
-        enableRefreshData = gd.getNextBoolean();
-        enableLog         = gd.getNextBoolean();
+    }
 
-        if (gd.invalidNumber()) { IJ.showStatus("Invalid number"); return false; }
+    @Override
+    protected boolean validateTaskDialog() {
         if (scoreThreshold < 0 || scoreThreshold > 1) { IJ.showStatus("Score threshold must be 0-1"); return false; }
         if (nmsThreshold   < 0 || nmsThreshold   > 1) { IJ.showStatus("NMS threshold must be 0-1");   return false; }
         return true;
     }
 
-    @Override
-    public void setNPasses(int nPasses) {}
+    // ---------------------------------------------------------------
+    // Inference
+    // ---------------------------------------------------------------
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = OrtUtil.getSlot(slotChoice);
-        if (s == null || !s.isLoaded()) {
-            OrtUtil.logError(this.getClass().getSimpleName(), "No model loaded in slot " + slotChoice);
-            return;
-        }
+        MyOrtSession s = requireLoadedSession();
+        if (s == null) return;
         if (s.getModelType() != MyOrtSession.ModelType.OBB) {
-            OrtUtil.logError(this.getClass().getSimpleName(),
-                "Model Type Mismatch - The model in slot " + slotChoice + " is not an OBB model.");
+            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not an OBB model.");
             return;
         }
 
@@ -118,16 +106,16 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
         String imgTitle = imp.getShortTitle();
 
         // 1. Preprocess
-        float[] inputData = OrtUtil.preprocess(ip, targetW, targetH, false);
-        float[] lbParams  = OrtUtil.calcLetterboxParams(imgW, imgH, targetW, targetH);
+        float[] inputData = preprocess(s, ip);
+        float[] lbParams  = letterboxParams(s, ip);
         float scale   = lbParams[0];
         float padLeft = lbParams[1];
         float padTop  = lbParams[2];
 
         // 2. Inference
-        long startTime = System.currentTimeMillis();
+        long timer = startTimer();
         try (OrtSession.Result result = s.runInference(inputData)) {
-            long inferenceTime = System.currentTimeMillis() - startTime;
+            long inferenceTime = elapsedMillis(timer);
 
             OnnxTensor t0    = (OnnxTensor) result.get(0);
             float[][][] raw0 = (float[][][]) t0.getValue();
@@ -136,20 +124,6 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
             int d1 = data.length;
             int d2 = data[0].length;
             int numClasses = s.getNumClasses();
-
-            if (enableLog) {
-                IJ.log("[OBB v2.0] Format: " + s.getCoordFormat()
-                    + "  tensor: [" + d1 + ", " + d2 + "]"
-                    + "  numClasses: " + numClasses);
-                // Print first 3 rows of raw output for diagnostics
-                int dbgRows = Math.min(d1, 3);
-                int dbgCols = Math.min(d2, 8);
-                for (int r = 0; r < dbgRows; r++) {
-                    StringBuilder sb = new StringBuilder("  row[").append(r).append("]: ");
-                    for (int c = 0; c < dbgCols; c++) sb.append(String.format("%.3f ", data[r][c]));
-                    IJ.log(sb.toString());
-                }
-            }
 
             // Candidates float[11] = [bx, by, env_w, env_h, score, classId, angle, cx, cy, w, h]
             // We compute the axis-aligned envelope (bx,by,env_w,env_h) strictly for the IoU NMS approximation.
@@ -166,7 +140,7 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
                     float h  = data[i][3];
                     int classId = (int) data[i][5];
                     float angle = data[i][6];
-                    
+
                     if (w <= 0 || h <= 0) continue;
 
                     // Calculate axis-aligned envelope for NMS
@@ -186,8 +160,6 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
                 boolean channelFirst = (d1 == C && d1 < d2);
                 int numAnchors = channelFirst ? d2 : d1;
 
-                float overallMaxScore = -1.0f;
-
                 for (int i = 0; i < numAnchors; i++) {
                     float cx = channelFirst ? data[0][i] : data[i][0];
                     float cy = channelFirst ? data[1][i] : data[i][1];
@@ -200,15 +172,11 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
                         float sc = channelFirst ? data[4 + c][i] : data[i][4 + c];
                         if (sc > maxScore) { maxScore = sc; maxClass = c; }
                     }
-                    
-                    if (maxScore > overallMaxScore) {
-                        overallMaxScore = maxScore;
-                    }
 
                     if (maxScore < scoreThreshold) continue;
 
                     float angle = channelFirst ? data[4 + numClasses][i] : data[i][4 + numClasses];
-                    
+
                     // Calculate axis-aligned envelope for NMS
                     float cosA = (float) Math.abs(Math.cos(angle));
                     float sinA = (float) Math.abs(Math.sin(angle));
@@ -218,10 +186,6 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
                     float by = cy - envH / 2.0f;
 
                     candidates.add(new float[]{bx, by, envW, envH, maxScore, maxClass, angle, cx, cy, w, h});
-                }
-                
-                if (enableLog) {
-                    IJ.log("  Max score across all anchors: " + overallMaxScore);
                 }
             }
 
@@ -245,14 +209,9 @@ public class ORT_2nd_OBB implements ExtendedPlugInFilter, DialogListener {
             outputObbResults(nmsResults, scale, padLeft, padTop, imgW, imgH, imgTitle, s, inferenceTime);
 
         } catch (Throwable t) {
-            t.printStackTrace();
-            OrtUtil.logError(this.getClass().getSimpleName(), "OBB inference failed: " + t.toString());
+            handleInferenceFailure("OBB inference failed: ", t);
         }
     }
-
-    // ---------------------------------------------------------------
-    // NMS
-    // ---------------------------------------------------------------
 
     // ---------------------------------------------------------------
     // Output
