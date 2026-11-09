@@ -3,11 +3,8 @@ package io.github.wakutakea.ijtoolsusingonnxruntime;
 
 import ij.IJ;
 import ij.gui.GenericDialog;
-import ij.gui.PolygonRoi;
-import ij.gui.Roi;
 import ij.process.ImageProcessor;
 import ai.onnxruntime.*;
-import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -103,7 +100,6 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
         int targetH    = s.getInputHeight();
         int imgW       = ip.getWidth();
         int imgH       = ip.getHeight();
-        String imgTitle = imp.getShortTitle();
 
         // 1. Preprocess (contract-driven; tensor + coordinate transform in one pass)
         Preprocessor.Result prep = prepareInput(s, ip);
@@ -135,7 +131,8 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
             }
 
             // 4. Output
-            outputObbResults(nmsResults, imgW, imgH, imgTitle, s, inferenceTime);
+            ResultsRenderer.renderObb(nmsResults, s, imp, inferenceTime,
+                    renderOptions(0.5, 0.5, showResultsTable, showRoiManager, showOverlay, 80, false));
 
         } catch (Throwable t) {
             handleInferenceFailure("OBB inference failed: ", t);
@@ -145,89 +142,4 @@ public class ORT_2nd_OBB extends AbstractOrt2ndPlugin {
     // ---------------------------------------------------------------
     // Output
     // ---------------------------------------------------------------
-
-    private void outputObbResults(List<Detection> results,
-                                  int imgW, int imgH,
-                                  String imageTitle, MyOrtSession s, long inferenceTime) {
-
-        ij.plugin.frame.RoiManager rm = null;
-        if (showRoiManager) rm = OrtUtil.getRoiManager(enableRefreshData, false);
-
-        ij.gui.Overlay overlay = null;
-        if (showOverlay) {
-            overlay = imp.getOverlay();
-            if (overlay == null) overlay = new ij.gui.Overlay();
-            if (enableRefreshData) overlay.clear();
-        }
-
-        ij.measure.ResultsTable rt = null;
-        if (showResultsTable) rt = OrtUtil.getResultsTable(enableRefreshData);
-
-        for (Detection r : results) {
-            float score = r.score();
-            int classId = r.classId();
-            float angle = r.angle();   // radians
-            // Center/size in original space (restored by the decoder)
-            float rw = r.width();
-            float rh = r.height();
-            float cx = r.x() + rw / 2;
-            float cy = r.y() + rh / 2;
-
-            if (rw <= 0 || rh <= 0) continue;
-
-            // Compute 4 rotated corners in original image space
-            float hw = rw / 2.0f;
-            float hh = rh / 2.0f;
-
-            float cosA = (float) Math.cos(angle);
-            float sinA = (float) Math.sin(angle);
-
-            // Corners relative to center (top-left, top-right, bottom-right, bottom-left)
-            float[] dx = {-hw,  hw,  hw, -hw};
-            float[] dy = {-hh, -hh,  hh,  hh};
-
-            int[] px = new int[4];
-            int[] py = new int[4];
-            for (int k = 0; k < 4; k++) {
-                px[k] = Math.round(cx + dx[k] * cosA - dy[k] * sinA);
-                py[k] = Math.round(cy + dx[k] * sinA + dy[k] * cosA);
-                // clamp to image bounds
-                px[k] = Math.max(0, Math.min(px[k], imgW - 1));
-                py[k] = Math.max(0, Math.min(py[k], imgH - 1));
-            }
-
-            PolygonRoi roi = new PolygonRoi(px, py, 4, Roi.POLYGON);
-            String nameStr = s.resolveClassName(classId);
-            roi.setName(nameStr + " (" + String.format("%.2f", score) + ")");
-            Color clsColor = OrtUtil.getColorForClass(classId);
-            roi.setStrokeColor(clsColor);
-
-            if (showRoiManager && rm != null) rm.addRoi(roi);
-
-            if (showOverlay && overlay != null) overlay.add(roi);
-
-            if (showResultsTable && rt != null) {
-                rt.incrementCounter();
-                rt.addValue("Image",          imageTitle);
-                rt.addValue("Slot",           slotChoice);
-                rt.addValue("ModelName",      s.getModelName());
-                rt.addValue("Label",          nameStr);
-                rt.addValue("Confidence",     score);
-                rt.addValue("CX",             cx);
-                rt.addValue("CY",             cy);
-                rt.addValue("W",              rw);
-                rt.addValue("H",              rh);
-                rt.addValue("Angle(rad)",     angle);
-                rt.addValue("Angle(deg)",     (double)(angle * 180.0f / (float)Math.PI));
-                rt.addValue("InferenceTime(ms)", inferenceTime);
-            }
-        }
-
-        if (showOverlay && overlay != null) {
-            imp.setOverlay(overlay);
-            imp.draw();
-        }
-
-        if (showResultsTable && rt != null && !IJ.isMacro()) rt.show("Results");
-    }
 }

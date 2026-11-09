@@ -5,9 +5,7 @@ import ij.IJ;
 import ij.ImagePlus;
 import ij.gui.GenericDialog;
 import ij.process.ImageProcessor;
-import ij.process.ByteProcessor;
 import ai.onnxruntime.*;
-import java.awt.Color;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -110,9 +108,9 @@ public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
         if (s == null) return;
 
         if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_SEGMENTATION) {
-            RfDetrResults.run(s, ip, imp, slotChoice, scoreThreshold, nmsThreshold, maskThreshold, 0.5,
-                    showResultsTable, showRoiManager, showOverlay, overlayAlpha, exportMask,
-                    enableRefreshData, enableLog);
+            RfDetrResults.run(s, ip, imp,
+                    renderOptions(maskThreshold, 0.5, showResultsTable, showRoiManager, showOverlay, overlayAlpha, exportMask),
+                    scoreThreshold, nmsThreshold);
             return;
         }
 
@@ -125,7 +123,6 @@ public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
         int targetH = s.getInputHeight();
         int imgW    = ip.getWidth();
         int imgH    = ip.getHeight();
-        String imageTitle = imp.getShortTitle();
 
         // 1. Preprocess (contract-driven; tensor + coordinate transform in one pass)
         Preprocessor.Result prep = prepareInput(s, ip);
@@ -169,8 +166,6 @@ public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
             // Output 1: Prototype masks [1, 32, protoH, protoW]
             float[][][][] raw1 = (float[][][][]) protoTensor.getValue();
             float[][][] proto = raw1[0];
-            int protoH = proto[0].length;
-            int protoW = proto[0][0].length;
 
             int numClasses = s.getNumClasses();
 
@@ -188,183 +183,12 @@ public class ORT_2nd_Segmentation extends AbstractOrt2ndPlugin {
             }
 
             // Post-processing & Output Visualizations
-            outputSegmentationResults(nmsResults, proto, protoH, protoW, targetW, targetH, tf, imgW, imgH, imageTitle, s, inferenceTime);
+            ResultsRenderer.renderSegmentation(nmsResults, s, imp, inferenceTime,
+                    renderOptions(maskThreshold, 0.5, showResultsTable, showRoiManager, showOverlay, overlayAlpha, exportMask),
+                    new ResultsRenderer.ProtoContext(proto, targetW, targetH, tf));
 
         } catch (Throwable t) {
             handleInferenceFailure("Segmentation inference failed: ", t);
         }
-    }
-
-    private void outputSegmentationResults(List<Detection> results, float[][][] proto, int protoH, int protoW,
-                                            int targetW, int targetH, Preprocessor.Transform tf,
-                                            int imgW, int imgH, String imageTitle, MyOrtSession s, long inferenceTime) {
-        float scale = tf.scale(), padLeft = tf.padLeft(), padTop = tf.padTop();
-
-        ij.plugin.frame.RoiManager rm = null;
-        if (showRoiManager) {
-            rm = OrtUtil.getRoiManager(enableRefreshData, false);
-        }
-
-        ij.gui.Overlay overlay = null;
-        if (showOverlay) {
-            overlay = imp.getOverlay();
-            if (overlay == null) {
-                overlay = new ij.gui.Overlay();
-            }
-            if (enableRefreshData) {
-                overlay.clear();
-            }
-        }
-
-        ByteProcessor globalMaskProcessor = null;
-        if (exportMask) {
-            globalMaskProcessor = new ByteProcessor(imgW, imgH);
-        }
-
-        ij.measure.ResultsTable rt = null;
-        if (showResultsTable) {
-            rt = OrtUtil.getResultsTable(enableRefreshData);
-        }
-
-        for (Detection r : results) {
-            MaskRef.ProtoMask pm = (MaskRef.ProtoMask) r.mask();
-            float bx = pm.boxX();
-            float by = pm.boxY();
-            float bw = pm.boxW();
-            float bh = pm.boxH();
-            float score = r.score();
-            int classId = r.classId();
-
-            float[] coeffs = pm.coeffs();
-
-            // Box in original image coordinates (restored by the decoder), clipped as before
-            float rx = Math.max(0, Math.min(r.x(), imgW));
-            float ry = Math.max(0, Math.min(r.y(), imgH));
-            float rw = Math.max(0, Math.min(r.width(), imgW - rx));
-            float rh = Math.max(0, Math.min(r.height(), imgH - ry));
-            if (rw <= 0 || rh <= 0) continue;
-
-            int wLimit = (int) Math.ceil(rw);
-            int hLimit = (int) Math.ceil(rh);
-            if (wLimit <= 0 || hLimit <= 0) continue;
-
-            ByteProcessor localMask = new ByteProcessor(wLimit, hLimit);
-
-            // Populate local mask pixels
-            for (int dy = 0; dy < hLimit; dy++) {
-                for (int dx = 0; dx < wLimit; dx++) {
-                    float x = rx + dx;
-                    float y = ry + dy;
-
-                    // Map back to letterbox input space
-                    float lx = x * scale + padLeft;
-                    float ly = y * scale + padTop;
-
-                    if (lx < 0 || lx >= targetW || ly < 0 || ly >= targetH) continue;
-
-                    // Map to prototype mask space
-                    float px = lx * (float) protoW / targetW;
-                    float py = ly * (float) protoH / targetH;
-
-                    // Crop to bounding box in prototype space to prevent leakage
-                    float pbx1 = bx * (float) protoW / targetW;
-                    float pby1 = by * (float) protoH / targetH;
-                    float pbx2 = (bx + bw) * (float) protoW / targetW;
-                    float pby2 = (by + bh) * (float) protoH / targetH;
-
-                    if (px < pbx1 || px > pbx2 || py < pby1 || py > pby2) continue;
-
-                    // Bilinear interpolation
-                    int x0 = (int) Math.floor(px);
-                    int y0 = (int) Math.floor(py);
-                    int x1 = x0 + 1;
-                    int y1 = y0 + 1;
-                    float fdx = px - x0;
-                    float fdy = py - y0;
-
-                    float v00 = getProtoVal(proto, coeffs, y0, x0, protoH, protoW);
-                    float v01 = getProtoVal(proto, coeffs, y0, x1, protoH, protoW);
-                    float v10 = getProtoVal(proto, coeffs, y1, x0, protoH, protoW);
-                    float v11 = getProtoVal(proto, coeffs, y1, x1, protoH, protoW);
-
-                    float v = (1.0f - fdy) * ((1.0f - fdx) * v00 + fdx * v01) + fdy * ((1.0f - fdx) * v10 + fdx * v11);
-                    float sigVal = 1.0f / (1.0f + (float) Math.exp(-v));
-
-                    if (sigVal > maskThreshold) {
-                        localMask.set(dx, dy, 255);
-                    }
-                }
-            }
-
-            // Convert to ROI
-            localMask.setThreshold(127, 255, ImageProcessor.NO_LUT_UPDATE);
-            ij.gui.Roi roi = new ij.plugin.filter.ThresholdToSelection().convert(localMask);
-            if (roi != null) {
-                roi.setLocation(rx, ry);
-                String nameStr = s.resolveClassName(classId);
-                roi.setName(nameStr + " (" + String.format("%.2f", score) + ")");
-                Color clsColor = OrtUtil.getColorForClass(classId);
-                roi.setStrokeColor(clsColor);
-
-                if (showRoiManager && rm != null) {
-                    rm.addRoi(roi);
-                }
-
-                if (showOverlay && overlay != null) {
-                    Color fillColor = new Color(clsColor.getRed(), clsColor.getGreen(), clsColor.getBlue(), overlayAlpha);
-                    roi.setFillColor(fillColor);
-                    overlay.add(roi);
-                }
-
-                if (exportMask && globalMaskProcessor != null) {
-                    for (int dy = 0; dy < hLimit; dy++) {
-                        for (int dx = 0; dx < wLimit; dx++) {
-                            if (localMask.get(dx, dy) == 255) {
-                                globalMaskProcessor.set((int)rx + dx, (int)ry + dy, 255);
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Record in ResultsTable
-            if (showResultsTable && rt != null) {
-                rt.incrementCounter();
-                rt.addValue("Image", imageTitle);
-                rt.addValue("Slot",  slotChoice);
-                rt.addValue("ModelName", s.getModelName());
-                rt.addValue("Label", s.resolveClassName(classId));
-                rt.addValue("Confidence", score);
-                rt.addValue("X", rx);
-                rt.addValue("Y", ry);
-                rt.addValue("W", rw);
-                rt.addValue("H", rh);
-                rt.addValue("InferenceTime(ms)", inferenceTime);
-            }
-        }
-
-        if (showOverlay && overlay != null) {
-            imp.setOverlay(overlay);
-            imp.draw();
-        }
-
-        if (showResultsTable && rt != null && !IJ.isMacro()) {
-            rt.show("Results");
-        }
-
-        if (exportMask && globalMaskProcessor != null) {
-            ImagePlus maskImp = new ImagePlus(imageTitle + "_mask", globalMaskProcessor);
-            maskImp.show();
-        }
-    }
-
-    private float getProtoVal(float[][][] proto, float[] coeffs, int y, int x, int protoH, int protoW) {
-        y = Math.max(0, Math.min(y, protoH - 1));
-        x = Math.max(0, Math.min(x, protoW - 1));
-        float sum = 0.0f;
-        for (int j = 0; j < 32; j++) {
-            sum += coeffs[j] * proto[j][y][x];
-        }
-        return sum;
     }
 }

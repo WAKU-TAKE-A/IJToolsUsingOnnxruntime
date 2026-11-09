@@ -87,8 +87,9 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
         if (s == null) return;
 
         if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_DETECTION) {
-            RfDetrResults.run(s, ip, imp, slotChoice, scoreThreshold, nmsThreshold, 0.5, 0.5,
-                    showResultsTable, showRoiManager, false, 80, false, enableRefreshData, enableLog);
+            RfDetrResults.run(s, ip, imp,
+                    renderOptions(0.5, 0.5, showResultsTable, showRoiManager, false, 80, false),
+                    scoreThreshold, nmsThreshold);
             return;
         }
 
@@ -102,7 +103,6 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
         int targetH = s.getInputHeight();
         int imgW    = ip.getWidth();
         int imgH    = ip.getHeight();
-        String imageTitle = imp.getShortTitle();
 
         // 1. Preprocess (contract-driven; tensor + coordinate transform in one pass)
         Preprocessor.Result prep = prepareInput(s, ip);
@@ -133,39 +133,11 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
             }
 
             // 5. Output
-            outputResults(nmsResults, s, imageTitle, inferenceTime);
+            ResultsRenderer.renderDetections(nmsResults, s, imp, inferenceTime,
+                    renderOptions(0.5, 0.5, showResultsTable, showRoiManager, false, 80, false));
 
         } catch (Throwable t) {
             handleInferenceFailure("Detection inference failed ", t);
-        }
-    }
-
-    private void outputResults(List<Detection> results, MyOrtSession s, String imageTitle, long inferenceTime) {
-        if (showResultsTable) {
-            ij.measure.ResultsTable rt = OrtUtil.getResultsTable(enableRefreshData);
-            for (Detection r : results) {
-                rt.incrementCounter();
-                rt.addValue("Image", imageTitle);
-                rt.addValue("Slot",  slotChoice);
-                rt.addValue("Label", s.resolveClassName(r.classId()));
-                rt.addValue("Confidence", r.score());
-                rt.addValue("X", r.x());
-                rt.addValue("Y", r.y());
-                rt.addValue("W", r.width());
-                rt.addValue("H", r.height());
-                rt.addValue("Inference(ms)", inferenceTime);
-            }
-            rt.show("Results");
-        }
-
-        if (showRoiManager) {
-            ij.plugin.frame.RoiManager rm = OrtUtil.getRoiManager(enableRefreshData, false);
-            for (Detection r : results) {
-                ij.gui.Roi roi = new ij.gui.Roi(r.x(), r.y(), r.width(), r.height());
-                roi.setName(s.resolveClassName(r.classId()) + " (" + String.format("%.2f", r.score()) + ")");
-                roi.setStrokeColor(OrtUtil.getColorForClass(r.classId()));
-                rm.addRoi(roi);
-            }
         }
     }
 }

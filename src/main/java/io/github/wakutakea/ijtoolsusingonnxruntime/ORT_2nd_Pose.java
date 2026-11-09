@@ -5,7 +5,6 @@ import ij.IJ;
 import ij.gui.GenericDialog;
 import ij.process.ImageProcessor;
 import ai.onnxruntime.*;
-import java.awt.Color;
 import java.util.List;
 
 /**
@@ -91,8 +90,9 @@ public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
         if (s == null) return;
 
         if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_POSE) {
-            RfDetrResults.run(s, ip, imp, slotChoice, scoreThreshold, nmsThreshold, 0.5, kptThreshold,
-                    false, showRoiManager, false, 80, false, enableRefreshData, enableLog);
+            RfDetrResults.run(s, ip, imp,
+                    renderOptions(0.5, kptThreshold, false, showRoiManager, false, 80, false),
+                    scoreThreshold, nmsThreshold);
             return;
         }
 
@@ -104,7 +104,6 @@ public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
 
         int imgW    = ip.getWidth();
         int imgH    = ip.getHeight();
-        String imageTitle = imp.getShortTitle();
 
         // 1. Preprocess (contract-driven; tensor + coordinate transform in one pass)
         Preprocessor.Result prep = prepareInput(s, ip);
@@ -133,39 +132,11 @@ public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
             }
 
             // 5. Output
-            outputResults(results, s, imageTitle);
+            ResultsRenderer.renderPose(results, s, imp, inferenceTime,
+                    renderOptions(0.5, kptThreshold, true, showRoiManager, false, 80, false));
 
         } catch (Throwable t) {
             handleInferenceFailure("Pose inference failed ", t);
         }
     }
-
-    private void outputResults(List<Detection> results, MyOrtSession s, String imageTitle) {
-        if (showRoiManager) {
-            ij.plugin.frame.RoiManager rm = OrtUtil.getRoiManager(enableRefreshData, false);
-            for (Detection r : results) {
-                ij.gui.Roi roi = new ij.gui.Roi(r.x(), r.y(), r.width(), r.height());
-                roi.setName("person (" + String.format("%.2f", r.score()) + ")");
-                roi.setStrokeColor(Color.YELLOW);
-                rm.addRoi(roi);
-
-                float[][] keypoints = r.keypoints();
-                if (keypoints != null) {
-                    for (int k = 0; k < keypoints.length; k++) {
-                        float kx = keypoints[k][0];
-                        float ky = keypoints[k][1];
-                        float ks = keypoints[k][2];
-                        if (ks > kptThreshold) {
-                            ij.gui.PointRoi p = new ij.gui.PointRoi(kx, ky);
-                            p.setName("kp" + k);
-                            rm.addRoi(p);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private static java.awt.Color[] COLORS = { java.awt.Color.RED, java.awt.Color.GREEN, java.awt.Color.BLUE, java.awt.Color.YELLOW, java.awt.Color.CYAN, java.awt.Color.MAGENTA };
-    private java.awt.Color getColor(int i) { return COLORS[i % COLORS.length]; }
 }

@@ -179,6 +179,28 @@ public abstract class AbstractOrt2ndPlugin implements ExtendedPlugInFilter, Dial
         return new float[]{t.scale(), t.padLeft(), t.padTop()};
     }
 
+    /**
+     * Builds the {@link RenderOptions} for this invocation from the
+     * task-specific display fields plus the common slot/refresh/log
+     * state, so call sites name their options instead of passing a
+     * positional boolean list.
+     */
+    protected final RenderOptions renderOptions(double maskThreshold, double kptThreshold,
+                                                boolean showResultsTable, boolean showRoiManager,
+                                                boolean showOverlay, int overlayAlpha, boolean exportMask) {
+        return RenderOptions.builder(getSlotChoice())
+                .maskThreshold(maskThreshold)
+                .kptThreshold(kptThreshold)
+                .showResultsTable(showResultsTable)
+                .showRoiManager(showRoiManager)
+                .showOverlay(showOverlay)
+                .overlayAlpha(overlayAlpha)
+                .exportMask(exportMask)
+                .enableRefreshData(isEnableRefreshData())
+                .enableLog(isEnableLog())
+                .build();
+    }
+
     /** Starts an inference timer. Timing is unified on nanoTime in all 2nd plugins. */
     protected static long startTimer() {
         return System.nanoTime();

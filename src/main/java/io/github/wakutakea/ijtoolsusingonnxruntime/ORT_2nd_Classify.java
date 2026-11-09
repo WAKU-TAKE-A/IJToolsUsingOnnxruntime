@@ -78,8 +78,6 @@ public class ORT_2nd_Classify extends AbstractOrt2ndPlugin {
             return;
         }
 
-        String imageTitle = imp.getShortTitle();
-
         // 1. Preprocess
         float[] inputData = preprocess(s, ip);
 
@@ -106,17 +104,8 @@ public class ORT_2nd_Classify extends AbstractOrt2ndPlugin {
             }
 
             // 5. Output to Results Table
-            ResultsTable rt = OrtUtil.getResultsTable(enableRefreshData);
-            for (int i = 0; i < entries.size(); i++) {
-                ClassifyDecoder.Entry e = entries.get(i);
-                rt.incrementCounter();
-                rt.addValue("Image", imageTitle);
-                rt.addValue("Rank",  i + 1);
-                rt.addValue("Label", s.resolveClassName(e.classId()));
-                rt.addValue("Score", e.score());
-                rt.addValue("Inference(ms)", inferenceTime);
-            }
-            rt.show("Results");
+            ResultsRenderer.renderClassification(entries, s, imp, inferenceTime,
+                    renderOptions(0.5, 0.5, true, false, false, 80, false));
 
         } catch (Throwable t) {
             handleInferenceFailure("Classification failed ", t);
