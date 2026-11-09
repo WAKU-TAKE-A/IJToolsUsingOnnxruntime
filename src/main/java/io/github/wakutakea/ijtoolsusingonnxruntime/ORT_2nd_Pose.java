@@ -86,10 +86,10 @@ public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = requireLoadedSession();
+        OrtModel s = requireLoadedSession();
         if (s == null) return;
 
-        if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_POSE) {
+        if (s.getContract() == ModelContract.RF_DETR_POSE) {
             RfDetrResults.run(s, ip, imp,
                     renderOptions(0.5, kptThreshold, false, showRoiManager, false, 80, false),
                     scoreThreshold, nmsThreshold);
@@ -97,8 +97,9 @@ public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
         }
 
         // Verify if the model is suitable for Pose
-        if (s.getModelType() != MyOrtSession.ModelType.POSE) {
-            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Pose model (" + s.getModelType() + ").");
+        if (contractOf(s).task() != ModelContract.Task.POSE
+                || contractOf(s).family() != ModelContract.Family.YOLO) {
+            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Pose model (" + s.getContract().label() + ").");
             return;
         }
 
@@ -120,7 +121,7 @@ public class ORT_2nd_Pose extends AbstractOrt2ndPlugin {
             float[][] data = raw[0];
 
             List<Detection> candidates = YoloDecoder.decodePose(
-                    data, s.getCoordFormat(), imgW, imgH, (float) scoreThreshold, prep.transform());
+                    data, s.getContract(), imgW, imgH, (float) scoreThreshold, prep.transform());
 
             // 4. NMS per the contract's policy (class-agnostic; E2E passes through)
             List<Detection> results = PostProcessors.applyNms(candidates, contractOf(s), (float) nmsThreshold);

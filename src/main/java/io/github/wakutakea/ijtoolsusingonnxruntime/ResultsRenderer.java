@@ -55,7 +55,7 @@ public final class ResultsRenderer {
     }
 
     private static void addCommonRow(ResultsTable rt, String imageTitle, RenderOptions o,
-                                     MyOrtSession s, Detection d, long inferenceTime) {
+                                     OrtModel s, Detection d, long inferenceTime) {
         addRow(rt, imageTitle, o.slot(), s.getModelName(), s.resolveClassName(d.classId()),
                d.classId(), d.score(), d.x(), d.y(), d.width(), d.height(), inferenceTime);
     }
@@ -64,7 +64,7 @@ public final class ResultsRenderer {
     // Detection
     // ---------------------------------------------------------------
 
-    public static void renderDetections(List<Detection> results, MyOrtSession s, ImagePlus imp,
+    public static void renderDetections(List<Detection> results, OrtModel s, ImagePlus imp,
                                         long inferenceTime, RenderOptions o) {
         if (o.showResultsTable()) {
             ResultsTable rt = OrtUtil.getResultsTable(o.enableRefreshData());
@@ -89,7 +89,7 @@ public final class ResultsRenderer {
     // Pose (results table is new in Phase 2; keypoints stay ROI-only)
     // ---------------------------------------------------------------
 
-    public static void renderPose(List<Detection> results, MyOrtSession s, ImagePlus imp,
+    public static void renderPose(List<Detection> results, OrtModel s, ImagePlus imp,
                                   long inferenceTime, RenderOptions o) {
         if (o.showResultsTable()) {
             ResultsTable rt = OrtUtil.getResultsTable(o.enableRefreshData());
@@ -128,7 +128,7 @@ public final class ResultsRenderer {
     // Segmentation (YOLO prototypes)
     // ---------------------------------------------------------------
 
-    public static void renderSegmentation(List<Detection> results, MyOrtSession s, ImagePlus imp,
+    public static void renderSegmentation(List<Detection> results, OrtModel s, ImagePlus imp,
                                           long inferenceTime, RenderOptions o, ProtoContext ctx) {
         float[][][] proto = ctx.proto();
         int protoH = proto[0].length;
@@ -311,7 +311,7 @@ public final class ResultsRenderer {
     // OBB (common columns carry the left-top conversion; CX/CY/Angle follow)
     // ---------------------------------------------------------------
 
-    public static void renderObb(List<Detection> results, MyOrtSession s, ImagePlus imp,
+    public static void renderObb(List<Detection> results, OrtModel s, ImagePlus imp,
                                  long inferenceTime, RenderOptions o) {
         int imgW = imp.getWidth();
         int imgH = imp.getHeight();
@@ -402,7 +402,7 @@ public final class ResultsRenderer {
     // Classification
     // ---------------------------------------------------------------
 
-    public static void renderClassification(List<ClassifyDecoder.Entry> entries, MyOrtSession s,
+    public static void renderClassification(List<ClassifyDecoder.Entry> entries, OrtModel s,
                                             ImagePlus imp, long inferenceTime, RenderOptions o) {
         ResultsTable rt = OrtUtil.getResultsTable(o.enableRefreshData());
         for (int i = 0; i < entries.size(); i++) {
@@ -424,7 +424,7 @@ public final class ResultsRenderer {
     // ---------------------------------------------------------------
 
     public static void renderRfDetr(List<Detection> detections, float[][][] masks, long inferenceMillis,
-                                    MyOrtSession session, ImagePlus image, RenderOptions o) {
+                                    OrtModel session, ImagePlus image, RenderOptions o) {
         int slot = o.slot();
         double maskThreshold = o.maskThreshold();
         double keypointThreshold = o.kptThreshold();

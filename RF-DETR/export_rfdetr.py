@@ -132,6 +132,7 @@ def export_one(name: str, checkpoint: Path | None = None) -> None:
     session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
     info = {
         "variant": name, "class": cls_name, "task": task, "license": license_name,
+        "tool": "rfdetr", "tool_version": importlib.metadata.version("rfdetr"),
         "rfdetr_version": importlib.metadata.version("rfdetr"),
         "checkpoint": str(config.pretrain_weights), "onnx": str(path.relative_to(MODEL_DIR)),
         "sha256": sha256(path),

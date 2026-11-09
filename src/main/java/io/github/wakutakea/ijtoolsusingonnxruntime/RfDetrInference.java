@@ -13,14 +13,14 @@ public final class RfDetrInference {
                             float width, float height, float[][] keypoints) {}
     public record Prediction(List<Detection> detections, float[][][] masks, long inferenceMillis) {}
 
-    public static String validate(MyOrtSession s) throws OrtException {
+    public static String validate(OrtModel s) throws OrtException {
         Map<String, String> meta = s.getMetadata().getCustomMetadata();
         if (!"1".equals(meta.get("ijtools.rfdetr.contract"))) {
             return "RF-DETR requires an export prepared by RF-DETR/export_rfdetr.py (contract metadata missing).";
         }
-        String task = switch (s.getModelType()) {
-            case RF_DETR_DETECTION -> "detect";
-            case RF_DETR_SEGMENTATION -> "segment";
+        String task = switch (s.getContract()) {
+            case RF_DETR_OBJECT -> "detect";
+            case RF_DETR_SEGMENT -> "segment";
             case RF_DETR_POSE -> "pose";
             default -> "unknown";
         };
@@ -80,7 +80,7 @@ public final class RfDetrInference {
         return Preprocessor.apply(ip, PreprocessSpec.RFDETR_STRETCH, width, height).tensor();
     }
 
-    public static Prediction predict(MyOrtSession s, ImageProcessor ip, float threshold) throws OrtException {
+    public static Prediction predict(OrtModel s, ImageProcessor ip, float threshold) throws OrtException {
         String error = validate(s);
         if (error != null) throw new IllegalArgumentException(error);
         float[] input = preprocess(ip, s.getInputWidth(), s.getInputHeight());
@@ -90,9 +90,9 @@ public final class RfDetrInference {
             long millis = (System.nanoTime() - start) / 1_000_000;
             float[][] boxes = ((float[][][]) out.get("dets").orElseThrow().getValue())[0];
             float[][] logits = ((float[][][]) out.get("labels").orElseThrow().getValue())[0];
-            float[][][] masks = s.getModelType() == MyOrtSession.ModelType.RF_DETR_SEGMENTATION
+            float[][][] masks = s.getContract() == ModelContract.RF_DETR_SEGMENT
                     ? ((float[][][][]) out.get("masks").orElseThrow().getValue())[0] : null;
-            float[][][] keypoints = s.getModelType() == MyOrtSession.ModelType.RF_DETR_POSE
+            float[][][] keypoints = s.getContract() == ModelContract.RF_DETR_POSE
                     ? ((float[][][][]) out.get("keypoints").orElseThrow().getValue())[0] : null;
             List<io.github.wakutakea.ijtoolsusingonnxruntime.Detection> decoded = RfDetrDecoder.decode(
                     boxes, logits, keypoints, ip.getWidth(), ip.getHeight(), threshold,

@@ -138,8 +138,8 @@ public abstract class AbstractOrt2ndPlugin implements ExtendedPlugInFilter, Dial
      * Returns the session in the selected slot, or null after logging the
      * shared "No model loaded" error.
      */
-    protected final MyOrtSession requireLoadedSession() {
-        MyOrtSession s = OrtUtil.getSlot(getSlotChoice());
+    protected final OrtModel requireLoadedSession() {
+        OrtModel s = OrtUtil.getSlot(getSlotChoice());
         if (s == null || !s.isLoaded()) {
             logError("No model loaded in slot " + getSlotChoice());
             return null;
@@ -148,31 +148,31 @@ public abstract class AbstractOrt2ndPlugin implements ExtendedPlugInFilter, Dial
     }
 
     /** Whether the session's model uses the YOLOX preprocessing variant (BGR, [0,255]). */
-    protected static boolean isYolox(MyOrtSession s) {
-        return s.getModelType() == MyOrtSession.ModelType.YOLOX;
+    protected static boolean isYolox(OrtModel s) {
+        return s.getContract().isYolox();
     }
 
     /** The model contract of a loaded session (never null for sessions loaded via 1st). */
-    protected static ModelContract contractOf(MyOrtSession s) {
-        return ModelContract.of(s.getModelType(), s.getCoordFormat());
+    protected static ModelContract contractOf(OrtModel s) {
+        return s.getContract();
     }
 
     /**
      * Runs the session contract's preprocessing once and returns both
      * the input tensor and the coordinate transform decoders need.
      */
-    protected static Preprocessor.Result prepareInput(MyOrtSession s, ImageProcessor ip) {
+    protected static Preprocessor.Result prepareInput(OrtModel s, ImageProcessor ip) {
         return Preprocessor.apply(ip, contractOf(s).preprocess(),
                                   s.getInputWidth(), s.getInputHeight());
     }
 
     /** YOLO-family letterbox preprocessing with the session's input size. */
-    protected static float[] preprocess(MyOrtSession s, ImageProcessor ip) {
+    protected static float[] preprocess(OrtModel s, ImageProcessor ip) {
         return prepareInput(s, ip).tensor();
     }
 
     /** Letterbox parameters [scale, padLeft, padTop] for the session's input size. */
-    protected static float[] letterboxParams(MyOrtSession s, ImageProcessor ip) {
+    protected static float[] letterboxParams(OrtModel s, ImageProcessor ip) {
         Preprocessor.Transform t = Preprocessor.transformFor(
                 contractOf(s).preprocess(), ip.getWidth(), ip.getHeight(),
                 s.getInputWidth(), s.getInputHeight());

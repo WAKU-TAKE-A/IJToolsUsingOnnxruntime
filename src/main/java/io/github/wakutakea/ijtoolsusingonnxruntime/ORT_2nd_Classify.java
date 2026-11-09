@@ -69,12 +69,12 @@ public class ORT_2nd_Classify extends AbstractOrt2ndPlugin {
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = requireLoadedSession();
+        OrtModel s = requireLoadedSession();
         if (s == null) return;
 
         // Verify if the model is suitable for Classification
-        if (s.getModelType() != MyOrtSession.ModelType.CLASSIFICATION) {
-            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Classification model (" + s.getModelType() + ").");
+        if (contractOf(s).task() != ModelContract.Task.CLASSIFICATION) {
+            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Classification model (" + s.getContract().label() + ").");
             return;
         }
 

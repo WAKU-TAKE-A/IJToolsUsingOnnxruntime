@@ -1,7 +1,8 @@
-// MyOrtSession.java - Holds one ONNX Runtime session and performs inference
+// OrtModel.java - Holds one ONNX Runtime session and performs inference
 package io.github.wakutakea.ijtoolsusingonnxruntime;
 
 import ai.onnxruntime.*;
+import ij.IJ;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -33,58 +34,28 @@ import java.util.*;
  * THE SOFTWARE.
  */
 
-public class MyOrtSession {
-
-    // ---------------------------------------------------------------
-    // Enums
-    // ---------------------------------------------------------------
-
-    public enum ModelType {
-        YOLO,
-        YOLOX,
-        CLASSIFICATION,
-        POSE,
-        SEGMENTATION,
-        OBB,
-        RF_DETR_DETECTION,
-        RF_DETR_SEGMENTATION,
-        RF_DETR_POSE,
-    }
-
-    public enum CoordFormat {
-        YOLO_PIXEL,
-        YOLO_NORMALIZED,
-        YOLO_OBJECT_E2E,
-        YOLOX_UNDECODED,
-        YOLO_POSE,
-        YOLO_POSE_E2E,
-        YOLO_SEGMENT,
-        YOLO_SEGMENT_E2E,
-        YOLO_OBB,
-        YOLO_OBB_E2E,
-        RF_DETR,
-    }
+public class OrtModel {
 
     // ---------------------------------------------------------------
     // Fields
     // ---------------------------------------------------------------
 
-    private OrtSession  session;
-    private String      modelPath;
-    private String      modelName;
-    private ModelType   modelType;
-    private CoordFormat coordFormat;
-    private int         inputWidth;
-    private int         inputHeight;
-    private String[]    classNames;
-    private int         numClasses;
-    private boolean     loaded;
+    private OrtSession    session;
+    private String        modelPath;
+    private String        modelName;
+    private ModelContract contract;
+    private ModelManifest manifest;
+    private int           inputWidth;
+    private int           inputHeight;
+    private String[]      classNames;
+    private int           numClasses;
+    private boolean       loaded;
 
     // ---------------------------------------------------------------
     // Constructor
     // ---------------------------------------------------------------
 
-    public MyOrtSession() {
+    public OrtModel() {
         loaded = false;
     }
 
@@ -97,87 +68,41 @@ public class MyOrtSession {
      * Input shape is auto-detected; -1 means dynamic (caller must set manually).
      *
      * @param modelPath absolute path to the .onnx file
-     * @param type      model task type
-     * @param coord     coordinate format for output parsing
+     * @param contract  the model format contract the user selected
      */
-    public void load(String modelPath, ModelType type, CoordFormat coord) throws OrtException {
+    public void load(String modelPath, ModelContract contract) throws OrtException {
         release(); // release any existing session first
 
         OrtEnvironment env = OrtUtil.getEnv();
         try (OrtSession.SessionOptions opts = new OrtSession.SessionOptions()) {
             this.session = env.createSession(modelPath, opts);
         }
-        this.modelPath   = modelPath;
-        this.modelName   = new File(modelPath).getName();
-        this.modelType   = type;
-        this.coordFormat = coord;
+        this.modelPath = modelPath;
+        this.modelName = new File(modelPath).getName();
+        this.contract  = contract;
 
         detectInputShape();
+
+        // A bundled manifest (YOLO exports) outranks shape heuristics
+        // for the class count. RF-DETR contracts never consult one:
+        // their contract stays the strict ONNX-metadata validation.
+        this.manifest = contract.family() == ModelContract.Family.YOLO
+                ? ModelManifest.findFor(modelPath) : null;
         resolveNumClasses();
 
         this.loaded = true;
     }
 
     /**
-     * Checks if the selected model format/type matches the actual output tensor and metadata.
+     * Checks if the selected format matches the actual output tensor
+     * and metadata. The check itself is the contract's responsibility
+     * ({@link ModelContract#validate}); see there for the rules.
+     *
      * @return a warning message if a mismatch is found, otherwise null.
      */
-    public String validateFormat() throws OrtException {
+    public String validate() throws OrtException {
         if (session == null) return null;
-        if (isRfDetr()) return RfDetrInference.validate(this);
-        
-        Map<String, NodeInfo> outMap = session.getOutputInfo();
-        if (outMap.isEmpty()) return null;
-        NodeInfo ni = outMap.values().iterator().next();
-        if (!(ni.getInfo() instanceof TensorInfo)) return null;
-        long[] shape = ((TensorInfo) ni.getInfo()).getShape();
-
-        // 1. Check dimensionality
-        if (shape.length == 2) {
-            // [batch, classes] -> Classification
-            if (modelType != ModelType.CLASSIFICATION) {
-                return "Warning: Model output is 2D, but " + modelType + " was selected.\n"
-                     + "This model is likely a Classification model.";
-            }
-        } else if (shape.length == 3) {
-            // [batch, ...] -> Detection, Pose or Segmentation
-            if (modelType == ModelType.CLASSIFICATION) {
-                return "Warning: Model output is 3D, but Classification was selected.\n"
-                     + "This model is likely a Detection, Pose or Segmentation model.";
-            }
-        }
-
-        // 2. Check metadata 'task' (Ultralytics specific)
-        Map<String, String> custom = session.getMetadata().getCustomMetadata();
-        String task = custom.get("task");
-        if (task != null && !task.isEmpty()) {
-            task = task.toLowerCase();
-            if (task.contains("detect") && (modelType != ModelType.YOLO && modelType != ModelType.YOLOX)) {
-                return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
-            }
-            if (task.contains("pose") && modelType != ModelType.POSE) {
-                return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
-            }
-            if (task.contains("class") && modelType != ModelType.CLASSIFICATION) {
-                return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
-            }
-            if (task.contains("segment") && modelType != ModelType.SEGMENTATION) {
-                return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
-            }
-            if (task.contains("obb") && modelType != ModelType.OBB) {
-                return "Warning: Model metadata task is '" + task + "', but " + modelType + " was selected.";
-            }
-        }
-
-        // 3. Check outputs for Segmentation
-        if (modelType == ModelType.SEGMENTATION) {
-            if (outMap.size() < 2) {
-                return "Warning: Model output count is " + outMap.size() + ", but SEGMENTATION was selected.\n"
-                     + "YOLO Segmentation models typically have at least 2 outputs.";
-            }
-        }
-
-        return null;
+        return contract.validate(this);
     }
 
     /** Detects input width/height from the session. Sets -1 if dynamic. */
@@ -196,75 +121,22 @@ public class MyOrtSession {
         }
     }
 
-    /** Infers numClasses from the output tensor shape heuristic. */
+    /**
+     * Resolves the class count: the bundled manifest when it records
+     * one, otherwise the contract's shape-based estimation. Either way
+     * the basis is logged, so a wrong count can be traced to its source.
+     */
     private void resolveNumClasses() throws OrtException {
-        this.numClasses = 0;
-        Map<String, NodeInfo> outMap = session.getOutputInfo();
-        if (outMap.isEmpty()) return;
-        NodeInfo ni = outMap.values().iterator().next();
-        if (!(ni.getInfo() instanceof TensorInfo)) return;
-        long[] shape = ((TensorInfo) ni.getInfo()).getShape();
-
-        switch (modelType) {
-            case RF_DETR_DETECTION:
-            case RF_DETR_SEGMENTATION:
-            case RF_DETR_POSE:
-                NodeInfo labels = outMap.get("labels");
-                if (labels != null && labels.getInfo() instanceof TensorInfo) {
-                    long[] dims = ((TensorInfo) labels.getInfo()).getShape();
-                    if (dims.length == 3 && dims[2] > 0) numClasses = (int) dims[2];
-                }
-                break;
-            case YOLO:
-                if (coordFormat == CoordFormat.YOLO_OBJECT_E2E) {
-                    // E2E: [1, N, 6] - numClasses not derivable from shape;
-                    // will be resolved from metadata class names
-                    numClasses = 0;
-                } else if (shape.length >= 3) {
-                    // [1, 4+numClasses, numAnchors] or [1, numAnchors, 4+numClasses]
-                    long d1 = shape[1], d2 = shape[2];
-                    numClasses = (int) ((d1 < d2 ? d1 : d2) - 4);
-                }
-                break;
-            case YOLOX:
-                // [1, numAnchors, 5+numClasses]
-                if (shape.length >= 3) numClasses = (int) (shape[2] - 5);
-                break;
-            case CLASSIFICATION:
-                // [1, numClasses]
-                if (shape.length >= 2) numClasses = (int) shape[1];
-                break;
-            case POSE:
-                // Person only
-                numClasses = 1;
-                break;
-            case SEGMENTATION:
-                if (coordFormat == CoordFormat.YOLO_SEGMENT_E2E) {
-                    // E2E: [1, N, 38] = x1,y1,x2,y2,score,classId,32coeffs
-                    // numClasses not derivable from shape; resolved from metadata class names
-                    numClasses = 0;
-                } else if (shape.length >= 3) {
-                    // [1, 4+numClasses+32, numAnchors] or [1, numAnchors, 4+numClasses+32]
-                    long d1 = shape[1], d2 = shape[2];
-                    numClasses = (int) ((d1 < d2 ? d1 : d2) - 4 - 32);
-                }
-                break;
-            case OBB:
-                if (coordFormat == CoordFormat.YOLO_OBB_E2E) {
-                    // E2E: [1, N, 7] = x1,y1,x2,y2,score,classId,angle
-                    // numClasses not derivable from shape; resolved from metadata class names
-                    numClasses = 0;
-                } else if (shape.length >= 3) {
-                    // [1, 5+numClasses, numAnchors] or [1, numAnchors, 5+numClasses]
-                    // Layout: cx,cy,w,h, class0..classN-1, angle  -> 4+N+1 = 5+N
-                    long d1 = shape[1], d2 = shape[2];
-                    numClasses = (int) ((d1 < d2 ? d1 : d2) - 5);
-                }
-                break;
-            default:
-                numClasses = 0;
+        if (manifest != null && manifest.numClasses() > 0) {
+            this.numClasses = manifest.numClasses();
+            IJ.log("OrtModel: numClasses=" + numClasses + " for " + modelName
+                    + " (bundled manifest " + manifest.path().getFileName() + ")");
+            return;
         }
-        if (numClasses < 0) numClasses = 0;
+        ModelContract.NumClasses estimated = contract.resolveNumClasses(this);
+        this.numClasses = estimated.value();
+        IJ.log("OrtModel: numClasses=" + numClasses + " for " + modelName
+                + " (estimated: " + estimated.basis() + ")");
     }
 
     /** Closes the ORT session and marks this slot as unloaded. */
@@ -387,20 +259,18 @@ public class MyOrtSession {
     // Getters / Setters
     // ---------------------------------------------------------------
 
-    public boolean     isLoaded()          { return loaded; }
+    public boolean       isLoaded()        { return loaded; }
     public boolean isRfDetr() {
-        return modelType == ModelType.RF_DETR_DETECTION
-            || modelType == ModelType.RF_DETR_SEGMENTATION
-            || modelType == ModelType.RF_DETR_POSE;
+        return contract != null && contract.family() == ModelContract.Family.RF_DETR;
     }
-    public String      getModelPath()      { return modelPath; }
-    public String      getModelName()      { return modelName; }
-    public ModelType   getModelType()      { return modelType; }
-    public CoordFormat getCoordFormat()    { return coordFormat; }
-    public int         getInputWidth()     { return inputWidth; }
-    public int         getInputHeight()    { return inputHeight; }
-    public String[]    getClassNames()     { return classNames; }
-    public int         getNumClasses()     { return numClasses; }
+    public String        getModelPath()    { return modelPath; }
+    public String        getModelName()    { return modelName; }
+    public ModelContract getContract()     { return contract; }
+    public ModelManifest getManifest()     { return manifest; }
+    public int           getInputWidth()   { return inputWidth; }
+    public int           getInputHeight()  { return inputHeight; }
+    public String[]      getClassNames()   { return classNames; }
+    public int           getNumClasses()   { return numClasses; }
 
     public void setInputWidth(int w)               { this.inputWidth  = w; }
     public void setInputHeight(int h)              { this.inputHeight = h; }

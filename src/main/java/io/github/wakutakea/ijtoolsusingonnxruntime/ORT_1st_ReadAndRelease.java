@@ -93,7 +93,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
                 return DONE;
             }
         } else if (actionChoice == 1) { // release_model
-            MyOrtSession s = OrtUtil.getSlot(slotChoice);
+            OrtModel s = OrtUtil.getSlot(slotChoice);
             if (s == null || !s.isLoaded()) {
                 OrtUtil.logError(this.getClass().getSimpleName(), "Slot " + slotChoice + " is empty.");
                 return DONE;
@@ -144,16 +144,13 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
     private void readModel() {
         try {
-            MyOrtSession existing = OrtUtil.getSlot(slotChoice);
+            OrtModel existing = OrtUtil.getSlot(slotChoice);
             if (existing != null && existing.isLoaded()) {
                 existing.release();
             }
 
-            MyOrtSession.ModelType   type  = resolveModelType(formatChoice);
-            MyOrtSession.CoordFormat coord = resolveCoordFormat(formatChoice);
-
-            MyOrtSession s = new MyOrtSession();
-            s.load(modelPath, type, coord);
+            OrtModel s = new OrtModel();
+            s.load(modelPath, ModelContract.fromIndex(formatChoice));
 
             // Handle dynamic input shape
             if (s.getInputWidth() <= 0 || s.getInputHeight() <= 0) {
@@ -182,7 +179,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
             // A mismatch is always a load failure, regardless of model family
             // (YOLO / RF-DETR) or macro execution: continuing would let the 2nd
             // plugins interpret the output tensor with the wrong format.
-            String warning = s.validateFormat();
+            String warning = s.validate();
             if (warning != null) {
                 OrtUtil.logError(this.getClass().getSimpleName(), "Model Type Mismatch - " + warning);
                 s.release();
@@ -201,7 +198,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
     }
 
     private void releaseModel() {
-        MyOrtSession s = OrtUtil.getSlot(slotChoice);
+        OrtModel s = OrtUtil.getSlot(slotChoice);
         if (s != null) {
             String name = s.getModelName();
             s.release();
@@ -213,7 +210,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
 
     private void releaseAll() {
         for (int i = 0; i < OrtUtil.MAX_SLOTS; i++) {
-            MyOrtSession s = OrtUtil.getSlot(i);
+            OrtModel s = OrtUtil.getSlot(i);
             if (s != null && s.isLoaded()) {
                 s.release();
                 OrtUtil.setSlot(i, null);
@@ -223,7 +220,7 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
         IJ.showStatus("All slots released.");
     }
 
-    private void logModelLoaded(MyOrtSession s) {
+    private void logModelLoaded(OrtModel s) {
         try {
             StringBuilder sb = new StringBuilder();
             sb.append("=".repeat(60)).append("\n");
@@ -265,11 +262,4 @@ public class ORT_1st_ReadAndRelease implements ExtendedPlugInFilter, DialogListe
         }
     }
 
-    private MyOrtSession.ModelType resolveModelType(int choice) {
-        return ModelContract.fromIndex(choice).modelType();
-    }
-
-    private MyOrtSession.CoordFormat resolveCoordFormat(int choice) {
-        return ModelContract.fromIndex(choice).coordFormat();
-    }
 }

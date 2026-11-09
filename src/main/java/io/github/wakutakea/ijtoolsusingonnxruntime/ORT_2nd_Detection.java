@@ -83,10 +83,10 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
 
     @Override
     public void run(ImageProcessor ip) {
-        MyOrtSession s = requireLoadedSession();
+        OrtModel s = requireLoadedSession();
         if (s == null) return;
 
-        if (s.getModelType() == MyOrtSession.ModelType.RF_DETR_DETECTION) {
+        if (s.getContract() == ModelContract.RF_DETR_OBJECT) {
             RfDetrResults.run(s, ip, imp,
                     renderOptions(0.5, 0.5, showResultsTable, showRoiManager, false, 80, false),
                     scoreThreshold, nmsThreshold);
@@ -94,8 +94,9 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
         }
 
         // Verify if the model is suitable for Detection
-        if (s.getModelType() != MyOrtSession.ModelType.YOLO && s.getModelType() != MyOrtSession.ModelType.YOLOX) {
-            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Detection model (" + s.getModelType() + ").");
+        if (contractOf(s).task() != ModelContract.Task.DETECTION
+                || contractOf(s).family() != ModelContract.Family.YOLO) {
+            logError("Model Type Mismatch - The model in slot " + slotChoice + " is not a Detection model (" + s.getContract().label() + ").");
             return;
         }
 
@@ -119,7 +120,7 @@ public class ORT_2nd_Detection extends AbstractOrt2ndPlugin {
             float[][] data = raw[0]; // [d1, d2]
 
             List<Detection> candidates = YoloDecoder.decodeDetection(
-                    data, isYolox(s), s.getCoordFormat(), s.getNumClasses(), imgW, imgH,
+                    data, s.getContract(), s.getNumClasses(), imgW, imgH,
                     (float) scoreThreshold, prep.transform(), targetW, targetH);
 
             // 4. NMS per the contract's policy (E2E formats pass through)

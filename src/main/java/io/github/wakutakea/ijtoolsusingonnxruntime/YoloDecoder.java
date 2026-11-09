@@ -21,22 +21,22 @@ public final class YoloDecoder {
     // Detection (YOLO / YOLO E2E / YOLOX)
     // ---------------------------------------------------------------
 
-    public static List<Detection> decodeDetection(float[][] data, boolean yolox,
-                                                  MyOrtSession.CoordFormat fmt, int numClasses,
+    public static List<Detection> decodeDetection(float[][] data,
+                                                  ModelContract contract, int numClasses,
                                                   int imgW, int imgH, float scoreTh,
                                                   Preprocessor.Transform tf, int inputW, int inputH) {
         List<Detection> out = new ArrayList<>();
-        if (yolox) {
+        if (contract.isYolox()) {
             parseYOLOX(data, numClasses, imgW, imgH, scoreTh, tf, inputW, out);
-        } else if (fmt == MyOrtSession.CoordFormat.YOLO_OBJECT_E2E) {
+        } else if (contract == ModelContract.YOLO_OBJECT_E2E) {
             parseYOLO_E2E(data, imgW, imgH, scoreTh, tf, out);
         } else {
-            parseYOLO(data, numClasses, fmt, imgW, imgH, scoreTh, tf, inputW, inputH, out);
+            parseYOLO(data, numClasses, contract, imgW, imgH, scoreTh, tf, inputW, inputH, out);
         }
         return out;
     }
 
-    private static void parseYOLO(float[][] data, int numClasses, MyOrtSession.CoordFormat fmt,
+    private static void parseYOLO(float[][] data, int numClasses, ModelContract contract,
                                   int imgW, int imgH, float scoreTh,
                                   Preprocessor.Transform tf, int inputW, int inputH,
                                   List<Detection> out) {
@@ -63,7 +63,7 @@ public final class YoloDecoder {
             if (maxScore < scoreTh) continue;
 
             float bx, by, bw, bh;
-            if (fmt == MyOrtSession.CoordFormat.YOLO_NORMALIZED) {
+            if (contract == ModelContract.YOLO_OBJECT_NORMALIZED) {
                 bw = w * inputW;
                 bh = h * inputH;
                 bx = cx * inputW - bw / 2;
@@ -171,11 +171,11 @@ public final class YoloDecoder {
     // Pose
     // ---------------------------------------------------------------
 
-    public static List<Detection> decodePose(float[][] data, MyOrtSession.CoordFormat fmt,
+    public static List<Detection> decodePose(float[][] data, ModelContract contract,
                                              int imgW, int imgH, float scoreTh,
                                              Preprocessor.Transform tf) {
         List<Detection> out = new ArrayList<>();
-        if (fmt == MyOrtSession.CoordFormat.YOLO_POSE_E2E) {
+        if (contract == ModelContract.YOLO_POSE_E2E) {
             parsePose_E2E(data, imgW, imgH, scoreTh, tf, out);
         } else {
             parsePose(data, imgW, imgH, scoreTh, tf, out);
@@ -273,13 +273,13 @@ public final class YoloDecoder {
     // ---------------------------------------------------------------
 
     public static List<Detection> decodeSegmentation(float[][] data0, int numClasses,
-                                                     MyOrtSession.CoordFormat fmt, float scoreTh,
+                                                     ModelContract contract, float scoreTh,
                                                      Preprocessor.Transform tf) {
         List<Detection> out = new ArrayList<>();
         int d1 = data0.length;
         int d2 = data0[0].length;
 
-        if (fmt == MyOrtSession.CoordFormat.YOLO_SEGMENT_E2E) {
+        if (contract == ModelContract.YOLO_SEGMENT_E2E) {
             // E2E format: [1, N, 38] = x1,y1,x2,y2 (letterbox px), score, classId, 32 coeffs
             int numDetections = d1;  // e.g. 300
             for (int i = 0; i < numDetections; i++) {
@@ -343,13 +343,13 @@ public final class YoloDecoder {
     // ---------------------------------------------------------------
 
     public static List<Detection> decodeObb(float[][] data, int numClasses,
-                                            MyOrtSession.CoordFormat fmt, float scoreTh,
+                                            ModelContract contract, float scoreTh,
                                             Preprocessor.Transform tf) {
         List<Detection> out = new ArrayList<>();
         int d1 = data.length;
         int d2 = data[0].length;
 
-        if (fmt == MyOrtSession.CoordFormat.YOLO_OBB_E2E) {
+        if (contract == ModelContract.YOLO_OBB_E2E) {
             // E2E format: [1, N, 7] = cx, cy, w, h, score, classId, angle
             for (int i = 0; i < d1; i++) {
                 float score = data[i][4];
