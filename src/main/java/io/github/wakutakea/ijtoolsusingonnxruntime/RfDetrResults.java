@@ -23,7 +23,7 @@ public final class RfDetrResults {
             RfDetrInference.Prediction prediction = RfDetrInference.predict(session, ip, (float) scoreThreshold);
             int beforeNms = prediction.detections().size();
             List<Detection> detections = PostProcessors.applyNms(toUnified(prediction),
-                    ModelContract.of(session.getModelType(), session.getCoordFormat()), (float) nmsThreshold);
+                    session.getContract(), (float) nmsThreshold);
             ResultsRenderer.renderRfDetr(detections, prediction.masks(), prediction.inferenceMillis(),
                     session, image, o);
             if (o.enableLog()) IJ.log("RF-DETR " + session.getModelName() + ": " + beforeNms + " -> "

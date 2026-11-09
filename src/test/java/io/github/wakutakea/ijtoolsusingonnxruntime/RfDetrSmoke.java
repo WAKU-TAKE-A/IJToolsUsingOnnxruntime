@@ -16,8 +16,8 @@ public final class RfDetrSmoke {
     public static void main(String[] args) throws Exception {
         Path root = Path.of(args[0]);
         String[][] cases = {
-            {"detection-nano", "dog.jpg", "RF_DETR_DETECTION"},
-            {"segmentation-nano", "dog.jpg", "RF_DETR_SEGMENTATION"},
+            {"detection-nano", "dog.jpg", "RF_DETR_OBJECT"},
+            {"segmentation-nano", "dog.jpg", "RF_DETR_SEGMENT"},
             {"keypoint-preview", "person.jpg", "RF_DETR_POSE"}
         };
         for (String[] item : cases) {
@@ -28,9 +28,9 @@ public final class RfDetrSmoke {
             MyOrtSession session = new MyOrtSession();
             try {
                 session.load(root.resolve(item[0]).resolve("model.onnx").toString(),
-                        MyOrtSession.ModelType.valueOf(item[2]), MyOrtSession.CoordFormat.RF_DETR);
+                        ModelContract.valueOf(item[2]));
                 session.loadClassNamesFromMetadata();
-                String error = session.validateFormat();
+                String error = session.validate();
                 if (error != null) throw new AssertionError(error);
                 float[] input = RfDetrInference.preprocess(image.getProcessor(),session.getInputWidth(),session.getInputHeight());
                 ByteBuffer bytes = ByteBuffer.allocate(input.length * 4).order(ByteOrder.LITTLE_ENDIAN);
@@ -62,7 +62,7 @@ public final class RfDetrSmoke {
                     index++;
                 }
                 if (prediction.masks() != null && maskPixels == 0) throw new AssertionError("Empty segmentation masks");
-                if (session.getModelType() == MyOrtSession.ModelType.RF_DETR_POSE && visiblePoints == 0)
+                if (session.getContract() == ModelContract.RF_DETR_POSE && visiblePoints == 0)
                     throw new AssertionError("No visible keypoints");
                 Files.writeString(output.resolve("detections.csv"),csv.toString());
                 Files.writeString(output.resolve("keypoints.csv"),keypoints.toString());
@@ -82,9 +82,9 @@ public final class RfDetrSmoke {
                 if (rt.size() != count) throw new AssertionError("Refresh failed");
                 // Exercise the actual existing plugin entry point, with GUI output disabled in this headless JVM.
                 OrtUtil.setSlot(0,session);
-                Object plugin = switch (session.getModelType()) {
-                    case RF_DETR_DETECTION -> new ORT_2nd_Detection();
-                    case RF_DETR_SEGMENTATION -> new ORT_2nd_Segmentation();
+                Object plugin = switch (session.getContract()) {
+                    case RF_DETR_OBJECT -> new ORT_2nd_Detection();
+                    case RF_DETR_SEGMENT -> new ORT_2nd_Segmentation();
                     case RF_DETR_POSE -> new ORT_2nd_Pose();
                     default -> throw new AssertionError("Unexpected task");
                 };
@@ -103,10 +103,10 @@ public final class RfDetrSmoke {
                 nms.setDouble(null,.1);
                 try { filter.run(image.getProcessor()); }
                 finally { nms.setDouble(null,previousThreshold); }
-                if (session.getModelType() != MyOrtSession.ModelType.RF_DETR_POSE
+                if (session.getContract() != ModelContract.RF_DETR_POSE
                         && ResultsTable.getResultsTable().size() != filtered.detections().size())
                     throw new AssertionError("Plugin did not apply NMS threshold");
-                if (session.getModelType() == MyOrtSession.ModelType.RF_DETR_DETECTION) {
+                if (session.getContract() == ModelContract.RF_DETR_OBJECT) {
                     long before = prediction.detections().stream().filter(d -> d.classId()==1).count();
                     long after = filtered.detections().stream().filter(d -> d.classId()==1).count();
                     if (before != 2 || after != 1 || filtered.detections().stream()

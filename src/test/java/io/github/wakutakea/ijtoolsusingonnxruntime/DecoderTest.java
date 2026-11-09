@@ -31,8 +31,8 @@ public class DecoderTest {
             {0.1f, 0.8f, 0.2f, 0, 0, 0, 0},  // class 0 scores
             {0.9f, 0.2f, 0.1f, 0, 0, 0, 0},  // class 1 scores
         };
-        List<Detection> out = YoloDecoder.decodeDetection(data, false,
-                MyOrtSession.CoordFormat.YOLO_PIXEL, 2, 100, 100, 0.5f, IDENTITY, 100, 100);
+        List<Detection> out = YoloDecoder.decodeDetection(data,
+                ModelContract.YOLO_OBJECT_PIXEL, 2, 100, 100, 0.5f, IDENTITY, 100, 100);
         assertEquals(2, out.size());
         Detection a = out.get(0);
         assertEquals(1, a.classId());
@@ -50,8 +50,8 @@ public class DecoderTest {
             {0, 0, 5, 5, 0.4f, 0},       // below threshold
             {90, 90, 120, 120, 0.8f, 0}, // clipped to the 100x100 image
         };
-        List<Detection> out = YoloDecoder.decodeDetection(data, false,
-                MyOrtSession.CoordFormat.YOLO_OBJECT_E2E, 3, 100, 100, 0.5f, IDENTITY, 100, 100);
+        List<Detection> out = YoloDecoder.decodeDetection(data,
+                ModelContract.YOLO_OBJECT_E2E, 3, 100, 100, 0.5f, IDENTITY, 100, 100);
         assertEquals(2, out.size());
         assertEquals(2, out.get(0).classId());
         assertEquals(20f, out.get(0).width(), EPS);
@@ -66,8 +66,8 @@ public class DecoderTest {
         float[][] data = new float[anchors][7]; // 5 + 2 classes, all zero
         // Anchor 0: grid (0,0), stride 8. obj=1, class0=0.9 -> conf 0.9, box (4,4,8,8)
         data[0] = new float[]{1, 1, 0, 0, 1.0f, 0.9f, 0.1f};
-        List<Detection> out = YoloDecoder.decodeDetection(data, true,
-                MyOrtSession.CoordFormat.YOLOX_UNDECODED, 2, 640, 640, 0.5f, IDENTITY, 640, 640);
+        List<Detection> out = YoloDecoder.decodeDetection(data,
+                ModelContract.YOLOX_OBJECT_UNDECODED, 2, 640, 640, 0.5f, IDENTITY, 640, 640);
         assertEquals(1, out.size());
         Detection d = out.get(0);
         assertEquals(0, d.classId());
@@ -87,7 +87,7 @@ public class DecoderTest {
         data[5][0] = 50; data[6][0] = 50; data[7][0] = 0.95f;  // keypoint 0
         data[8][0] = 40; data[9][0] = 60; data[10][0] = 0.3f;  // keypoint 1
         List<Detection> out = YoloDecoder.decodePose(data,
-                MyOrtSession.CoordFormat.YOLO_POSE, 100, 100, 0.5f, IDENTITY);
+                ModelContract.YOLO_POSE, 100, 100, 0.5f, IDENTITY);
         assertEquals(1, out.size());
         Detection d = out.get(0);
         assertEquals(40f, d.x(), EPS); assertEquals(30f, d.y(), EPS);
@@ -118,7 +118,7 @@ public class DecoderTest {
         // Non-identity transform: scale 0.5, pad (10, 20)
         Preprocessor.Transform tf = new Preprocessor.Transform(0.5f, 10f, 20f, true);
         List<Detection> out = YoloDecoder.decodeSegmentation(data, 1,
-                MyOrtSession.CoordFormat.YOLO_SEGMENT, 0.5f, tf);
+                ModelContract.YOLO_SEGMENT, 0.5f, tf);
         assertEquals(1, out.size());
         Detection d = out.get(0);
         // Restored: ((40-10)/0.5, (40-20)/0.5, 20/0.5, 20/0.5)
@@ -138,7 +138,7 @@ public class DecoderTest {
         data[0][4] = 0.9f; data[0][5] = 3;
         for (int j = 0; j < 32; j++) data[0][6 + j] = 1f;
         List<Detection> out = YoloDecoder.decodeSegmentation(data, 4,
-                MyOrtSession.CoordFormat.YOLO_SEGMENT_E2E, 0.5f, IDENTITY);
+                ModelContract.YOLO_SEGMENT_E2E, 0.5f, IDENTITY);
         assertEquals(1, out.size());
         assertEquals(3, out.get(0).classId());
         assertEquals(20f, out.get(0).width(), EPS);
@@ -155,7 +155,7 @@ public class DecoderTest {
         data[0][0] = 50; data[1][0] = 50; data[2][0] = 30; data[3][0] = 10;
         data[4][0] = 0.2f; data[5][0] = 0.9f; data[6][0] = 0.5f; // angle last
         List<Detection> out = YoloDecoder.decodeObb(data, 2,
-                MyOrtSession.CoordFormat.YOLO_OBB, 0.5f, IDENTITY);
+                ModelContract.YOLO_OBB, 0.5f, IDENTITY);
         assertEquals(1, out.size());
         Detection d = out.get(0);
         assertEquals(1, d.classId());
@@ -167,7 +167,7 @@ public class DecoderTest {
     @Test public void obbE2eAndEnvelopeNms() {
         float[][] data = {{50, 50, 30, 10, 0.9f, 1, -0.25f}};
         List<Detection> out = YoloDecoder.decodeObb(data, 2,
-                MyOrtSession.CoordFormat.YOLO_OBB_E2E, 0.5f, IDENTITY);
+                ModelContract.YOLO_OBB_E2E, 0.5f, IDENTITY);
         assertEquals(1, out.size());
         assertEquals(-0.25f, out.get(0).angle(), EPS);
         assertEquals(35f, out.get(0).x(), EPS);
