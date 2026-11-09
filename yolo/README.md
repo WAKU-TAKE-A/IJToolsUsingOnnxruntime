@@ -22,15 +22,15 @@ python -m venv .\yolo\.venv
 .\yolo\.venv\Scripts\python.exe -m pip install -r .\yolo\requirements.txt
 ```
 
-依存は `ultralytics>=8.0.0`、`onnx>=1.12.0`、`onnxruntime>=1.12.0`、`numpy>=1.20.0`。
-上限や完全固定はないため、同じコマンドでも環境更新で export 仕様が変わる可能性があります。
-この文書整備では依存の更新や新規モデルの取得は行っていません。
+依存は RF-DETR 側と同じく完全固定（`==`）です：`ultralytics==8.4.208`、`onnx==1.23.2`、
+`onnxruntime==1.25.1`（Java 側の ONNX Runtime と一致）、`numpy==2.5.4`。
+export 仕様を変えるときは、固定版数とこの文書を一緒に更新してください。
 
 ## スクリプト別の挙動
 
 | スクリプト | 入力と用途 | 出力・書き込み |
 |---|---|---|
-| `download_and_convert.py` | モデル名を1引数。省略時 `yolov8n-seg` | スクリプト隣の `models/` に `.pt`、`.onnx`、クラス名 `.txt` |
+| `download_and_convert.py` | モデル名を1引数。省略時 `yolov8n-seg`。`--opset`、`--end2end` 指定可 | スクリプト隣の `models/` に `.pt`、`.onnx`、クラス名 `.txt`、`<モデル>.onnx.manifest.json` |
 | `convert.py` | `<model_path> [classes_file]`、旧変換とクラス絞り込み | Ultralytics が返す場所に ONNX。絞り込み時はその ONNX を上書き |
 | `inspect_onnx.py` | ONNX の入力・出力名、形状、要素型の確認 | コンソールのみ。モデルは変更しない |
 | `extract_names.py` | ONNX の `names` メタデータを抽出 | ONNX と同じ場所・同じ stem の `.txt` を UTF-8 で作成・上書き |
@@ -38,7 +38,11 @@ python -m venv .\yolo\.venv
 `download_and_convert.py` は実行時に `yolo/models` へカレントディレクトリを変更します。
 モデル名に `.pt` がなければ付加し、basename にした後 `YOLO()` に渡します。
 したがって `C:\other\custom.pt` をそのままロードする用途には使えません。
-export は `format="onnx"` だけを明示しており、opset や E2E の設定は Ultralytics の既定値に依存します。
+export は opset（既定 17、RF-DETR 側の export と一致）と E2E の有無（既定は通常モデル）を
+明示して渡します。既定値に依存するのはそれ以外の export 引数だけです。
+export 後、ONNX の隣に `<モデル>.onnx.manifest.json`（RF-DETR 側と共通の形式：
+由来・変換ツールと版数・opset・入出力形状・SHA-256・埋め込みメタデータ・クラス数）を書きます。
+Java 側は同梱 manifest がある場合、その task とクラス数を形状推定より優先します。
 
 `extract_names.py` の `.txt` は1行1クラスであり、辞書の ID 自体は書き出しません。
 メタデータのキーは整数IDを想定しています。
@@ -78,6 +82,6 @@ ONNX の出力を確認して `1st Read and Release` の `model_format` を指�
 Seg は `YOLO_Segment` / `YOLO_Segment_E2E`、OBB は `YOLO_OBB` / `YOLO_OBB_E2E` です。
 モデル名だけで通常形式と E2E を断定しないでください。
 
-ラベルの正本は Java の `ORT_1st_ReadAndRelease.FORMAT_LABELS`。
+ラベルの正本は Java の `ModelContract`（宣言順＝形式インデックス、変更禁止）。
 クラス名は通常 ONNX メタデータから読み込み、`.txt` があれば自動で読み込む実装ではありません。
 NMS とテストの現状については [README_AI.md](../README_AI.md) を参照してください。
